@@ -41,6 +41,9 @@ const GIVEAWAY_BUTTON_PREFIX = 'giveaway:enter:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
+const TICKET_CLAIM_BUTTON_ID = 'ticket:claim';
+const TICKET_TRYOUT_ACCEPT_BUTTON_ID = 'ticket:tryout-accept';
+const TICKET_TRYOUT_DENY_BUTTON_ID = 'ticket:tryout-deny';
 const TICKET_WHITELIST_BUTTON_ID = 'ticket:control-whitelist';
 const TICKET_GENERATE_KEYS_BUTTON_ID = 'ticket:control-generate-keys';
 const TICKET_RENAME_BUTTON_ID = 'ticket:control-rename';
@@ -165,7 +168,8 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption((option) => option.setName('category').setDescription('Category for newly created tickets').addChannelTypes(ChannelType.GuildCategory).setRequired(true))
     .addRoleOption((option) => option.setName('staff-role').setDescription('Role that can view and reply to tickets').setRequired(true))
-    .addChannelOption((option) => textChannelOption(option.setName('log-channel').setDescription('Optional ticket log channel'))),
+    .addChannelOption((option) => textChannelOption(option.setName('log-channel').setDescription('Optional ticket log channel')))
+    .addChannelOption((option) => textChannelOption(option.setName('notification-channel').setDescription('Channel for claims, tryout decisions, and closed-ticket notices'))),
   new SlashCommandBuilder()
     .setName('customize-tickets')
     .setDescription('Customize the general ticket panel.')
@@ -322,10 +326,11 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].panel ||= {};
-  guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {} };
+  guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {}, notificationChannelId: null };
   guildConfigurations[guildId].tickets.panel ||= {};
   guildConfigurations[guildId].tickets.rivalsPanel ||= {};
   guildConfigurations[guildId].tickets.open ||= {};
+  guildConfigurations[guildId].tickets.notificationChannelId ||= null;
   guildConfigurations[guildId].whitelist ||= { keys: {}, panel: {} };
   guildConfigurations[guildId].whitelist.keys ||= {};
   guildConfigurations[guildId].whitelist.panel ||= {};
@@ -454,10 +459,26 @@ function ticketControlPanel() {
       .setDescription('Staff can manage this ticket with the controls below. Whitelist actions require a reason and are recorded.')
       .setFooter({ text: 'Only the configured staff role or server managers can use staff controls.' })],
     components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(TICKET_CLAIM_BUTTON_ID).setLabel('Claim Ticket').setEmoji('🙋').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(TICKET_WHITELIST_BUTTON_ID).setLabel('Whitelist Owner').setEmoji('✅').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId(TICKET_GENERATE_KEYS_BUTTON_ID).setLabel('Generate Keys').setEmoji('🔑').setStyle(ButtonStyle.Primary),
       new ButtonBuilder().setCustomId(TICKET_RENAME_BUTTON_ID).setLabel('Rename Ticket').setEmoji('✏️').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId(TICKET_CLOSE_BUTTON_ID).setLabel('Close Ticket').setEmoji('🔒').setStyle(ButtonStyle.Danger),
+    )],
+  };
+}
+
+function tryoutControlPanel() {
+  return {
+    embeds: [new EmbedBuilder()
+      .setColor(0xf1c40f)
+      .setTitle('Tryout Staff Panel')
+      .setDescription('Staff can claim this application and record the tryout decision here.')],
+    components: [new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(TICKET_CLAIM_BUTTON_ID).setLabel('Claim Tryout').setEmoji('🙋').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId(TICKET_TRYOUT_ACCEPT_BUTTON_ID).setLabel('Accept').setEmoji('✅').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId(TICKET_TRYOUT_DENY_BUTTON_ID).setLabel('Deny').setEmoji('❌').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(TICKET_CLOSE_BUTTON_ID).setLabel('Close Ticket').setEmoji('🔒').setStyle(ButtonStyle.Secondary),
     )],
   };
 }
@@ -1075,7 +1096,7 @@ async function createTicket(interaction, { type, details = [] }) {
   tickets.open[interaction.user.id] = ticket;
   await saveConfigurations();
   await channel.send({ content: `${interaction.user} <@&${tickets.staffRoleId}>`, embeds: [ticketWelcomeEmbed(ticket)], components: ticketCloseComponents() });
-  await channel.send(ticketControlPanel());
+  await channel.send(ticket.type === 'Rivals Clan Application' ? tryoutControlPanel() : ticketControlPanel());
   if (details.length) {
     await channel.send({
       embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('Rivals Application Details').addFields(details).setTimestamp()],
@@ -1096,6 +1117,7 @@ async function handleSetupTickets(interaction) {
   config.tickets.categoryId = category.id;
   config.tickets.staffRoleId = staffRole.id;
   config.tickets.logChannelId = interaction.options.getChannel('log-channel')?.id || null;
+  config.tickets.notificationChannelId = interaction.options.getChannel('notification-channel')?.id || config.tickets.logChannelId || null;
   await saveConfigurations();
   return replyPrivately(interaction, `Tickets are configured. New tickets will be created in ${category} and visible to ${staffRole}.`);
 }
@@ -1171,6 +1193,12 @@ async function handleTicketClose(interaction) {
   entry.closedAt = Date.now();
   await saveConfigurations();
   await ticketLog(interaction.guild, tickets, 'Ticket Closed', `${interaction.user} closed ${interaction.channel}.`);
+  await sendTicketNotification(interaction.guild, tickets, new EmbedBuilder()
+    .setColor(0x57f287)
+    .setTitle('Ticket Closed — Member Available')
+    .setDescription(`${entry.ownerMention} is now available. Create a ticket to join UC.`)
+    .addFields({ name: 'Ticket', value: entry.type, inline: true }, { name: 'Closed by', value: `${interaction.user}`, inline: true })
+    .setTimestamp());
   await editPrivateReply(interaction, 'Ticket closed. The channel will now be deleted.');
   await interaction.channel.delete(`Ticket closed by ${interaction.user.tag}`);
 }
@@ -1189,6 +1217,49 @@ function requireTicketStaff(interaction) {
   const isStaff = interaction.member?.roles?.cache?.has(tickets.staffRoleId);
   if (!isManager && !isStaff) throw new Error('Only ticket staff can use this control panel.');
   return { tickets, ticket };
+}
+
+async function sendTicketNotification(guild, tickets, embed) {
+  const channelId = tickets.notificationChannelId || tickets.logChannelId;
+  if (!channelId) return;
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (channel?.isTextBased()) await channel.send({ embeds: [embed] }).catch(() => undefined);
+}
+
+async function handleTicketClaim(interaction) {
+  const { tickets, ticket } = requireTicketStaff(interaction);
+  if (ticket.claimedBy) return replyPrivately(interaction, `This ticket is already claimed by <@${ticket.claimedBy}>.`, 'info');
+  ticket.claimedBy = interaction.user.id;
+  ticket.claimedAt = Date.now();
+  await saveConfigurations();
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('Ticket Claimed')
+    .setDescription(`<@${interaction.user.id}> is trying out ${ticket.ownerMention}.`)
+    .addFields({ name: 'Ticket member', value: ticket.ownerMention, inline: true }, { name: 'Staff member', value: `${interaction.user}`, inline: true })
+    .setTimestamp();
+  await interaction.channel.send({ embeds: [embed] });
+  await sendTicketNotification(interaction.guild, tickets, embed);
+  return replyPrivately(interaction, 'You claimed this ticket.', 'success');
+}
+
+async function handleTryoutDecision(interaction, accepted) {
+  const { tickets, ticket } = requireTicketStaff(interaction);
+  if (ticket.type !== 'Rivals Clan Application') throw new Error('Accept and deny are only available in tryout tickets.');
+  ticket.tryoutStatus = accepted ? 'accepted' : 'denied';
+  ticket.decidedBy = interaction.user.id;
+  ticket.decidedAt = Date.now();
+  await saveConfigurations();
+  const embed = new EmbedBuilder()
+    .setColor(accepted ? 0x57f287 : 0xed4245)
+    .setTitle(accepted ? 'Tryout Accepted' : 'Tryout Denied')
+    .setDescription(accepted ? `${ticket.ownerMention} has been accepted.` : `${ticket.ownerMention} has been denied.`)
+    .addFields({ name: 'Decision by', value: `${interaction.user}`, inline: true })
+    .setTimestamp();
+  await interaction.channel.send({ embeds: [embed] });
+  await ticketLog(interaction.guild, tickets, accepted ? 'Tryout Accepted' : 'Tryout Denied', `${ticket.ownerMention} was ${accepted ? 'accepted' : 'denied'} by ${interaction.user}.`);
+  await sendTicketNotification(interaction.guild, tickets, embed);
+  return replyPrivately(interaction, `The user has been ${accepted ? 'accepted' : 'denied'}.`, accepted ? 'success' : 'info');
 }
 
 function ticketWhitelistModal() {
@@ -1221,6 +1292,9 @@ function ticketRenameModal() {
 
 async function handleTicketControlButton(interaction) {
   requireTicketStaff(interaction);
+  if (interaction.customId === TICKET_CLAIM_BUTTON_ID) return handleTicketClaim(interaction);
+  if (interaction.customId === TICKET_TRYOUT_ACCEPT_BUTTON_ID) return handleTryoutDecision(interaction, true);
+  if (interaction.customId === TICKET_TRYOUT_DENY_BUTTON_ID) return handleTryoutDecision(interaction, false);
   if (interaction.customId === TICKET_WHITELIST_BUTTON_ID) {
     await validateWhitelistSetup(interaction.guild);
     return interaction.showModal(ticketWhitelistModal());
@@ -1619,7 +1693,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
-    if (interaction.isButton() && [TICKET_WHITELIST_BUTTON_ID, TICKET_GENERATE_KEYS_BUTTON_ID, TICKET_RENAME_BUTTON_ID].includes(interaction.customId)) await handleTicketControlButton(interaction);
+    if (interaction.isButton() && [TICKET_CLAIM_BUTTON_ID, TICKET_TRYOUT_ACCEPT_BUTTON_ID, TICKET_TRYOUT_DENY_BUTTON_ID, TICKET_WHITELIST_BUTTON_ID, TICKET_GENERATE_KEYS_BUTTON_ID, TICKET_RENAME_BUTTON_ID].includes(interaction.customId)) await handleTicketControlButton(interaction);
     if (interaction.isButton() && interaction.customId === WHITELIST_BUTTON_ID) await handleWhitelistButton(interaction);
     if (interaction.isModalSubmit() && interaction.customId === RIVALS_SIGNUP_MODAL_ID) await handleRivalsModal(interaction);
     if (interaction.isModalSubmit() && interaction.customId === WHITELIST_MODAL_ID) await handleWhitelistRedeem(interaction);
