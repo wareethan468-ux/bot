@@ -53,11 +53,15 @@ const TICKET_RENAME_MODAL_ID = 'ticket:control-rename-modal';
 const RIVALS_SIGNUP_MODAL_ID = 'ticket:rivals-modal';
 const CU_TRYOUT_TICKET_TYPE = 'CU Tryout Application';
 const GAMBLING_STAFF_ROLE_ID = '1538297693217099828';
+const DUEL_MODAL_ID = 'economy:duel-modal';
+const DUEL_ACCEPT_PREFIX = 'economy:duel-accept:';
+const DUEL_DECLINE_PREFIX = 'economy:duel-decline:';
 const WHITELIST_BUTTON_ID = 'whitelist:redeem';
 const WHITELIST_MODAL_ID = 'whitelist:key-modal';
 const inviteCache = new Map();
 const dataFile = join(process.cwd(), 'data', 'guild-config.json');
 const timers = new Map();
+const pendingDuels = new Map();
 let guildConfigurations = {};
 
 const textChannelOption = (option) => option.addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
@@ -105,6 +109,9 @@ const commands = [
   new SlashCommandBuilder().setName('dice').setDescription('Guess a dice roll for a big payout.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addIntegerOption((o) => o.setName('guess').setDescription('Pick 1-6').setRequired(true).setMinValue(1).setMaxValue(6)),
   new SlashCommandBuilder().setName('roulette').setDescription('Pick a roulette number from 0 to 36.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addIntegerOption((o) => o.setName('number').setDescription('Pick 0-36').setRequired(true).setMinValue(0).setMaxValue(36)),
   new SlashCommandBuilder().setName('coin-leaderboard').setDescription('Show the richest CU members.'),
+  new SlashCommandBuilder().setName('duel').setDescription('Challenge members to a CU duel.').addUserOption((o) => o.setName('opponent').setDescription('First opponent').setRequired(true)).addUserOption((o) => o.setName('opponent2').setDescription('Second opponent for 2v1/2v2')).addUserOption((o) => o.setName('opponent3').setDescription('Third opponent for 2v2')).addStringOption((o) => o.setName('mode').setDescription('Duel format').setRequired(true).addChoices({ name: '1v1', value: '1v1' }, { name: '2v1', value: '2v1' }, { name: '2v2', value: '2v2' })).addBooleanOption((o) => o.setName('your-server').setDescription('Ask for your server link before sending the challenge')),
+  new SlashCommandBuilder().setName('duel-leaderboard').setDescription('Show advanced CU duel statistics.'),
+  new SlashCommandBuilder().setName('duel-result').setDescription('Record a completed duel result.').addUserOption((o) => o.setName('winner').setDescription('Winner').setRequired(true)).addUserOption((o) => o.setName('loser').setDescription('Loser').setRequired(true)),
   new SlashCommandBuilder().setName('economy-config').setDescription('Customize the CU economy.').addStringOption((o) => o.setName('currency').setDescription('Currency name, such as CU Coins').setMaxLength(30)).addStringOption((o) => o.setName('emoji').setDescription('Currency emoji').setMaxLength(8)).addIntegerOption((o) => o.setName('daily-amount').setDescription('Daily reward').setMinValue(0).setMaxValue(1000000)).addIntegerOption((o) => o.setName('starting-balance').setDescription('Balance for new members').setMinValue(0).setMaxValue(1000000)).addIntegerOption((o) => o.setName('max-bet').setDescription('Maximum wager').setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('color').setDescription('Embed color hex').setMaxLength(7)),
   new SlashCommandBuilder().setName('economy-reset').setDescription('Reset one member or everyone’s CU balance.').addUserOption((o) => o.setName('user').setDescription('Member to reset (leave blank for everyone)')),
   new SlashCommandBuilder().setName('economy-add').setDescription('Add CU coins to a member.').addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Coins to add').setRequired(true).setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(200)),
@@ -342,6 +349,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
+  guildConfigurations[guildId].economy.duelStats ||= {};
   guildConfigurations[guildId].economy.currency ||= 'CU Coins';
   guildConfigurations[guildId].economy.emoji ||= '🪙';
   guildConfigurations[guildId].economy.dailyAmount ??= 500;
@@ -545,6 +553,7 @@ function helpMessage() {
         { name: 'Tickets', value: commandGroups.tickets.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU tryouts + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU economy', value: '`/balance` `/daily` `/coinflip` `/slots` `/dice` `/roulette` `/coin-leaderboard`', inline: true },
+        { name: 'CU duels', value: '`/duel` `/duel-leaderboard` `/duel-result`', inline: true },
         { name: 'Tracking', value: `${commandGroups.tracking.map((name) => `\`/${name}\``).join('\n')}\nJoin/leave/invite embeds`, inline: true },
         { name: 'Message builder', value: commandGroups.messaging.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Moderation actions', value: '`/addrole` `/removerole` `/kick` `/ban` `/softban` `/unban` `/timeout` `/mute` `/deafen` `/move` `/lock` `/slowmode` `/clear`', inline: false },
@@ -593,6 +602,150 @@ function economyBalance(guildId, userId) {
 function economyLabel(guildId, amount) {
   const economy = economyFor(guildId);
   return `${Number(amount).toLocaleString()} ${economy.emoji} ${economy.currency}`;
+}
+
+function duelStatsFor(guildId, userId) {
+  const economy = economyFor(guildId);
+  economy.duelStats[userId] ||= { wins: 0, losses: 0, duels: 0 };
+  return economy.duelStats[userId];
+}
+
+function duelFormModal() {
+  return new ModalBuilder()
+    .setCustomId(DUEL_MODAL_ID)
+    .setTitle('Your CU Duel Server')
+    .addComponents(new ActionRowBuilder().addComponents(
+      new TextInputBuilder().setCustomId('server-link').setLabel('Paste your private server link').setStyle(TextInputStyle.Short).setPlaceholder('https://www.roblox.com/share?...').setRequired(true).setMaxLength(500),
+    ));
+}
+
+function duelButtons(id) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${DUEL_ACCEPT_PREFIX}${id}`).setLabel('Accept Duel').setEmoji('⚔️').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`${DUEL_DECLINE_PREFIX}${id}`).setLabel('Decline').setEmoji('✖️').setStyle(ButtonStyle.Danger),
+  );
+}
+
+async function sendDuelChallenge(interaction, payload, serverLink = null) {
+  const id = randomBytes(5).toString('hex');
+  const challenge = { ...payload, id, serverLink, accepted: [], declined: false, createdAt: Date.now() };
+  pendingDuels.set(id, challenge);
+  const opponentMentions = payload.opponents.map((userId) => `<@${userId}>`).join(', ');
+  const warningLines = [];
+  for (const userId of payload.opponents) {
+    const member = await interaction.guild.members.fetch(userId).catch(() => null);
+    if (member?.presence?.status === 'offline') warningLines.push(`<@${userId}> appears **offline**.`);
+    if (member?.presence?.status === 'idle') warningLines.push(`<@${userId}> appears **idle**.`);
+  }
+  const embed = new EmbedBuilder()
+    .setColor(0xfee75c)
+    .setTitle(`⚔️ ${payload.mode} CU Duel Challenge`)
+    .setDescription(`${interaction.user} challenged ${opponentMentions}. Each opponent must accept.`)
+    .addFields({ name: 'Challenger', value: `${interaction.user}`, inline: true }, { name: 'Opponents', value: opponentMentions, inline: true }, { name: 'Format', value: payload.mode, inline: true });
+  if (serverLink) embed.addFields({ name: 'Private server', value: serverLink });
+  if (warningLines.length) embed.addFields({ name: 'Availability warning', value: warningLines.join('\n') });
+  embed.setFooter({ text: 'Accept in your DM from the bot. A private duel ticket opens after everyone accepts.' }).setTimestamp();
+  await interaction.reply({ content: opponentMentions, embeds: [embed] });
+  for (const userId of payload.opponents) {
+    const user = await client.users.fetch(userId).catch(() => null);
+    if (!user) continue;
+    await user.send({ embeds: [embed], components: [duelButtons(id)] }).catch(() => undefined);
+  }
+  return null;
+}
+
+async function openDuelTicket(guild, challenge) {
+  const tickets = ticketConfiguration(guild.id);
+  if (!tickets?.categoryId || !tickets.staffRoleId) throw new Error('Set up tickets first with /setup-tickets so the duel chat can be created.');
+  const { botMember } = await validateTicketSetup(guild, tickets);
+  const participants = [challenge.challengerId, ...challenge.opponents];
+  const channel = await guild.channels.create({
+    name: `duel-${challenge.id}`,
+    type: ChannelType.GuildText,
+    parent: tickets.categoryId,
+    topic: `${challenge.mode} CU duel • ${challenge.id}`,
+    permissionOverwrites: [
+      { id: guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
+      ...participants.map((id) => ({ id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] })),
+      { id: tickets.staffRoleId, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] },
+      { id: botMember.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.ManageChannels] },
+    ],
+  });
+  const mentions = participants.map((id) => `<@${id}>`).join(' ');
+  await channel.send({ content: `${mentions} <@&${tickets.staffRoleId}>`, embeds: [new EmbedBuilder().setColor(0x57f287).setTitle('CU Duel Chat Opened').setDescription('All duel participants can coordinate here. Staff can moderate this private chat.').addFields({ name: 'Format', value: challenge.mode, inline: true }, { name: 'Server link', value: challenge.serverLink || 'The challenger did not provide a server link.' }).setTimestamp()] });
+  return channel;
+}
+
+async function handleDuelButton(interaction) {
+  const accepted = interaction.customId.startsWith(DUEL_ACCEPT_PREFIX);
+  const id = interaction.customId.slice((accepted ? DUEL_ACCEPT_PREFIX : DUEL_DECLINE_PREFIX).length);
+  const challenge = pendingDuels.get(id);
+  if (!challenge) throw new Error('This duel challenge has expired.');
+  if (!challenge.opponents.includes(interaction.user.id)) throw new Error('You are not an opponent in this duel.');
+  if (!accepted) {
+    challenge.declined = true;
+    pendingDuels.delete(id);
+    await interaction.update({ embeds: [responseEmbed(`${interaction.user} declined the duel.`, 'info')], components: [] });
+    return;
+  }
+  if (!challenge.accepted.includes(interaction.user.id)) challenge.accepted.push(interaction.user.id);
+  if (challenge.accepted.length < challenge.opponents.length) {
+    await interaction.update({ embeds: [responseEmbed(`You accepted. Waiting for ${challenge.opponents.length - challenge.accepted.length} more opponent(s).`, 'success')], components: [] });
+    return;
+  }
+  pendingDuels.delete(id);
+  const guild = await client.guilds.fetch(challenge.guildId);
+  const channel = await openDuelTicket(guild, challenge);
+  await interaction.update({ embeds: [responseEmbed(`Duel accepted! Your private chat is ${channel}.`, 'success')], components: [] });
+}
+
+async function handleDuelCommand(interaction) {
+  if (interaction.commandName === 'duel') {
+    const opponents = ['opponent', 'opponent2', 'opponent3'].map((name) => interaction.options.getUser(name)).filter(Boolean).map((user) => user.id);
+    const mode = interaction.options.getString('mode', true);
+    const requiredOpponents = { '1v1': 1, '2v1': 2, '2v2': 3 }[mode];
+    if (opponents.length !== requiredOpponents) throw new Error(`${mode} requires exactly ${requiredOpponents} opponent user(s).`);
+    if (new Set(opponents).size !== opponents.length || opponents.includes(interaction.user.id)) throw new Error('Each opponent must be a different member, and you cannot duel yourself.');
+    const payload = { guildId: interaction.guildId, channelId: interaction.channelId, challengerId: interaction.user.id, opponents, mode };
+    if (interaction.options.getBoolean('your-server')) {
+      pendingDuels.set(`form:${interaction.user.id}`, payload);
+      return interaction.showModal(duelFormModal());
+    }
+    return sendDuelChallenge(interaction, payload);
+  }
+  if (interaction.commandName === 'duel-leaderboard') {
+    const stats = economyFor(interaction.guildId).duelStats;
+    const rows = Object.entries(stats).sort((a, b) => (b[1].wins - a[1].wins) || (b[1].duels - a[1].duels)).slice(0, 10);
+    if (!rows.length) return replyPrivately(interaction, 'No duel results have been recorded yet.', 'info');
+    const lines = await Promise.all(rows.map(async ([id, item], index) => {
+      const user = await client.users.fetch(id).catch(() => null);
+      const rate = item.duels ? Math.round((item.wins / item.duels) * 100) : 0;
+      return `**${index + 1}.** ${user?.username || `<@${id}>`} — **${item.wins}W / ${item.losses}L** • ${rate}% win rate`;
+    }));
+    return replyPrivately(interaction, `🏆 **Advanced CU Duel Leaderboard**\n\n${lines.join('\n')}`, 'info');
+  }
+  if (interaction.commandName === 'duel-result') {
+    requireEconomyManager(interaction);
+    const winner = interaction.options.getUser('winner', true);
+    const loser = interaction.options.getUser('loser', true);
+    if (winner.id === loser.id) throw new Error('Winner and loser must be different members.');
+    duelStatsFor(interaction.guildId, winner.id).wins += 1;
+    duelStatsFor(interaction.guildId, winner.id).duels += 1;
+    duelStatsFor(interaction.guildId, loser.id).losses += 1;
+    duelStatsFor(interaction.guildId, loser.id).duels += 1;
+    await saveConfigurations();
+    return replyPrivately(interaction, `Recorded **${winner}** as the winner over **${loser}**.`, 'success');
+  }
+  return false;
+}
+
+async function handleDuelModal(interaction) {
+  const payload = pendingDuels.get(`form:${interaction.user.id}`);
+  if (!payload) throw new Error('Your duel form expired. Please run /duel again.');
+  pendingDuels.delete(`form:${interaction.user.id}`);
+  const serverLink = interaction.fields.getTextInputValue('server-link').trim();
+  if (!/^https?:\/\//i.test(serverLink)) throw new Error('Please submit a valid server link beginning with http:// or https://.');
+  return sendDuelChallenge(interaction, payload, serverLink);
 }
 
 function requireEconomyManager(interaction) {
@@ -1866,6 +2019,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'message-builder') await handleMessageBuilder(interaction);
       else if (interaction.commandName === 'message-edit') await handleMessageEdit(interaction);
       else if (['balance', 'daily', 'coinflip', 'slots', 'dice', 'roulette', 'coin-leaderboard', 'economy-config', 'economy-reset', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
+      else if (['duel', 'duel-leaderboard', 'duel-result'].includes(interaction.commandName)) await handleDuelCommand(interaction);
       else if (organizedModerationCommandNames.has(interaction.commandName)) await handleOrganizedModerationCommand(interaction, { requireTextChannel, canPost, replyPrivately, ensureConfiguration, saveConfigurations });
       return;
     }
@@ -1876,11 +2030,13 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
     if (interaction.isButton() && [TICKET_CLAIM_BUTTON_ID, TICKET_TRYOUT_ACCEPT_BUTTON_ID, TICKET_TRYOUT_DENY_BUTTON_ID, TICKET_WHITELIST_BUTTON_ID, TICKET_GENERATE_KEYS_BUTTON_ID, TICKET_RENAME_BUTTON_ID].includes(interaction.customId)) await handleTicketControlButton(interaction);
     if (interaction.isButton() && interaction.customId === WHITELIST_BUTTON_ID) await handleWhitelistButton(interaction);
+    if (interaction.isButton() && (interaction.customId.startsWith(DUEL_ACCEPT_PREFIX) || interaction.customId.startsWith(DUEL_DECLINE_PREFIX))) await handleDuelButton(interaction);
     if (interaction.isModalSubmit() && interaction.customId === RIVALS_SIGNUP_MODAL_ID) await handleRivalsModal(interaction);
     if (interaction.isModalSubmit() && interaction.customId === WHITELIST_MODAL_ID) await handleWhitelistRedeem(interaction);
     if (interaction.isModalSubmit() && interaction.customId === TICKET_WHITELIST_MODAL_ID) await handleTicketWhitelistModal(interaction);
     if (interaction.isModalSubmit() && interaction.customId === TICKET_GENERATE_KEYS_MODAL_ID) await handleTicketGenerateKeysModal(interaction);
     if (interaction.isModalSubmit() && interaction.customId === TICKET_RENAME_MODAL_ID) await handleTicketRenameModal(interaction);
+    if (interaction.isModalSubmit() && interaction.customId === DUEL_MODAL_ID) await handleDuelModal(interaction);
   } catch (error) {
     console.error('Interaction failed:', error);
     await replyPrivately(interaction, error instanceof Error ? error.message : 'Unknown error', 'error').catch(() => undefined);
