@@ -168,6 +168,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption((option) => option.setName('category').setDescription('Category for newly created tickets').addChannelTypes(ChannelType.GuildCategory).setRequired(true))
     .addRoleOption((option) => option.setName('staff-role').setDescription('Role that can view and reply to tickets').setRequired(true))
+    .addRoleOption((option) => option.setName('tryout-role').setDescription('Role given automatically when a Rivals tryout is accepted'))
     .addChannelOption((option) => textChannelOption(option.setName('log-channel').setDescription('Optional ticket log channel')))
     .addChannelOption((option) => textChannelOption(option.setName('notification-channel').setDescription('Channel for claims, tryout decisions, and closed-ticket notices'))),
   new SlashCommandBuilder()
@@ -326,11 +327,12 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].panel ||= {};
-  guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {}, notificationChannelId: null };
+  guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {}, notificationChannelId: null, tryoutRoleId: null };
   guildConfigurations[guildId].tickets.panel ||= {};
   guildConfigurations[guildId].tickets.rivalsPanel ||= {};
   guildConfigurations[guildId].tickets.open ||= {};
   guildConfigurations[guildId].tickets.notificationChannelId ||= null;
+  guildConfigurations[guildId].tickets.tryoutRoleId ||= null;
   guildConfigurations[guildId].whitelist ||= { keys: {}, panel: {} };
   guildConfigurations[guildId].whitelist.keys ||= {};
   guildConfigurations[guildId].whitelist.panel ||= {};
@@ -1116,6 +1118,15 @@ async function handleSetupTickets(interaction) {
   const config = ensureConfiguration(interaction.guildId);
   config.tickets.categoryId = category.id;
   config.tickets.staffRoleId = staffRole.id;
+  const tryoutRole = interaction.options.getRole('tryout-role');
+  if (tryoutRole?.managed || tryoutRole?.id === interaction.guild.id) throw new Error('Choose a normal, non-managed tryout role.');
+  if (tryoutRole) {
+    const botMemberForRole = await interaction.guild.members.fetchMe();
+    if (!botMemberForRole.permissions.has(PermissionFlagsBits.ManageRoles) || botMemberForRole.roles.highest.comparePositionTo(tryoutRole) <= 0) {
+      throw new Error('I need Manage Roles and my bot role must be above the configured tryout role.');
+    }
+  }
+  config.tickets.tryoutRoleId = tryoutRole?.id || null;
   config.tickets.logChannelId = interaction.options.getChannel('log-channel')?.id || null;
   config.tickets.notificationChannelId = interaction.options.getChannel('notification-channel')?.id || config.tickets.logChannelId || null;
   await saveConfigurations();
@@ -1250,10 +1261,22 @@ async function handleTryoutDecision(interaction, accepted) {
   ticket.decidedBy = interaction.user.id;
   ticket.decidedAt = Date.now();
   await saveConfigurations();
+  let awardedRole = null;
+  if (accepted && tickets.tryoutRoleId) {
+    const [member, role] = await Promise.all([
+      interaction.guild.members.fetch(ticket.ownerId),
+      interaction.guild.roles.fetch(tickets.tryoutRoleId),
+    ]);
+    if (!role || role.managed || role.position >= (await interaction.guild.members.fetchMe()).roles.highest.position) {
+      throw new Error('The configured tryout role is missing or below my bot role. Update /setup-tickets.');
+    }
+    await member.roles.add(role, `Tryout accepted by ${interaction.user.tag}`);
+    awardedRole = role;
+  }
   const embed = new EmbedBuilder()
     .setColor(accepted ? 0x57f287 : 0xed4245)
     .setTitle(accepted ? 'Tryout Accepted' : 'Tryout Denied')
-    .setDescription(accepted ? `${ticket.ownerMention} has been accepted.` : `${ticket.ownerMention} has been denied.`)
+    .setDescription(accepted ? `${ticket.ownerMention} has been accepted${awardedRole ? ` and received the ${awardedRole} role` : ''}.` : `${ticket.ownerMention} has been denied.`)
     .addFields({ name: 'Decision by', value: `${interaction.user}`, inline: true })
     .setTimestamp();
   await interaction.channel.send({ embeds: [embed] });
