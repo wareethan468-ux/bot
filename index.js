@@ -52,6 +52,7 @@ const TICKET_GENERATE_KEYS_MODAL_ID = 'ticket:control-generate-keys-modal';
 const TICKET_RENAME_MODAL_ID = 'ticket:control-rename-modal';
 const RIVALS_SIGNUP_MODAL_ID = 'ticket:rivals-modal';
 const CU_TRYOUT_TICKET_TYPE = 'CU Tryout Application';
+const GAMBLING_STAFF_ROLE_ID = '1538297693217099828';
 const WHITELIST_BUTTON_ID = 'whitelist:redeem';
 const WHITELIST_MODAL_ID = 'whitelist:key-modal';
 const inviteCache = new Map();
@@ -97,6 +98,13 @@ const legacyModerationCommands = [
 const legacyModerationCommandNames = new Set(legacyModerationCommands.map((command) => command.name));
 const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.'),
+  new SlashCommandBuilder().setName('balance').setDescription('Check your CU coin balance.').addUserOption((o) => o.setName('user').setDescription('Optional member to check')),
+  new SlashCommandBuilder().setName('daily').setDescription('Claim your daily CU coins.'),
+  new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on heads or tails.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addStringOption((o) => o.setName('side').setDescription('Your pick').setRequired(true).addChoices({ name: 'Heads', value: 'heads' }, { name: 'Tails', value: 'tails' })),
+  new SlashCommandBuilder().setName('slots').setDescription('Spin the CU slot machine.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)),
+  new SlashCommandBuilder().setName('coin-leaderboard').setDescription('Show the richest CU members.'),
+  new SlashCommandBuilder().setName('economy-add').setDescription('Add CU coins to a member.').addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Coins to add').setRequired(true).setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(200)),
+  new SlashCommandBuilder().setName('economy-remove').setDescription('Remove CU coins from a member.').addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Coins to remove').setRequired(true).setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(200)),
   new SlashCommandBuilder()
     .setName('setup-verification')
     .setDescription('Choose the role granted after verification.')
@@ -327,6 +335,9 @@ function configuration(guildId) {
 function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
+  guildConfigurations[guildId].economy ||= { balances: {}, daily: {} };
+  guildConfigurations[guildId].economy.balances ||= {};
+  guildConfigurations[guildId].economy.daily ||= {};
   guildConfigurations[guildId].panel ||= {};
   guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {}, notificationChannelId: null, tryoutRoleId: null };
   guildConfigurations[guildId].tickets.panel ||= {};
@@ -523,6 +534,7 @@ function helpMessage() {
         { name: 'Giveaways', value: commandGroups.giveaways.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Tickets', value: commandGroups.tickets.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU tryouts + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
+        { name: 'CU economy', value: '`/balance` `/daily` `/coinflip` `/slots` `/coin-leaderboard`', inline: true },
         { name: 'Tracking', value: `${commandGroups.tracking.map((name) => `\`/${name}\``).join('\n')}\nJoin/leave/invite embeds`, inline: true },
         { name: 'Message builder', value: commandGroups.messaging.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Moderation actions', value: '`/addrole` `/removerole` `/kick` `/ban` `/softban` `/unban` `/timeout` `/mute` `/deafen` `/move` `/lock` `/slowmode` `/clear`', inline: false },
@@ -556,6 +568,91 @@ function editPrivateReply(interaction, content, type = 'success') {
 function requireAdminServer(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('You need the Manage Server permission to use this command.');
+}
+
+function economyFor(guildId) {
+  return ensureConfiguration(guildId).economy;
+}
+
+function economyBalance(guildId, userId) {
+  const economy = economyFor(guildId);
+  economy.balances[userId] = Math.max(0, Number(economy.balances[userId] || 0));
+  return economy.balances[userId];
+}
+
+function requireEconomyManager(interaction) {
+  if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
+  if (!interaction.member?.roles?.cache?.has(GAMBLING_STAFF_ROLE_ID)) throw new Error('You need the configured economy manager role to change member balances.');
+}
+
+async function handleEconomyCommand(interaction) {
+  const { commandName } = interaction;
+  if (commandName === 'balance') {
+    const user = interaction.options.getUser('user') || interaction.user;
+    return replyPrivately(interaction, `🪙 **${user.username}** has **${economyBalance(interaction.guildId, user.id).toLocaleString()} CU coins**.`, 'info');
+  }
+  if (commandName === 'daily') {
+    const economy = economyFor(interaction.guildId);
+    const last = Number(economy.daily[interaction.user.id] || 0);
+    const cooldown = 24 * 60 * 60 * 1000;
+    if (Date.now() - last < cooldown) {
+      const next = Math.ceil((last + cooldown) / 1000);
+      throw new Error(`You already claimed daily coins. Try again <t:${next}:R>.`);
+    }
+    economy.daily[interaction.user.id] = Date.now();
+    economy.balances[interaction.user.id] = economyBalance(interaction.guildId, interaction.user.id) + 500;
+    await saveConfigurations();
+    return replyPrivately(interaction, '🎁 You claimed **500 CU coins** for today!', 'success');
+  }
+  if (commandName === 'coin-leaderboard') {
+    const economy = economyFor(interaction.guildId);
+    const rows = Object.entries(economy.balances).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    if (!rows.length) return replyPrivately(interaction, 'No CU coin balances exist yet.', 'info');
+    const lines = await Promise.all(rows.map(async ([id, amount], index) => {
+      const user = await client.users.fetch(id).catch(() => null);
+      return `**${index + 1}.** ${user ? user.username : `<@${id}>`} — **${Number(amount).toLocaleString()}** 🪙`;
+    }));
+    return replyPrivately(interaction, `🏆 **CU Coin Leaderboard**\n\n${lines.join('\n')}`, 'info');
+  }
+  if (commandName === 'economy-add' || commandName === 'economy-remove') {
+    requireEconomyManager(interaction);
+    const user = interaction.options.getUser('user', true);
+    const amount = interaction.options.getInteger('amount', true);
+    const economy = economyFor(interaction.guildId);
+    const before = economyBalance(interaction.guildId, user.id);
+    const after = commandName === 'economy-add' ? before + amount : Math.max(0, before - amount);
+    economy.balances[user.id] = after;
+    await saveConfigurations();
+    const verb = commandName === 'economy-add' ? 'added to' : 'removed from';
+    return replyPrivately(interaction, `🪙 **${amount.toLocaleString()}** coins ${verb} ${user}. New balance: **${after.toLocaleString()}**.\nReason: ${interaction.options.getString('reason') || 'No reason provided.'}`);
+  }
+  if (commandName === 'coinflip' || commandName === 'slots') {
+    const amount = interaction.options.getInteger('amount', true);
+    const balance = economyBalance(interaction.guildId, interaction.user.id);
+    if (amount > balance) throw new Error(`You only have **${balance.toLocaleString()}** CU coins.`);
+    const economy = economyFor(interaction.guildId);
+    let won = false;
+    let payout = 0;
+    let resultText;
+    if (commandName === 'coinflip') {
+      const result = Math.random() < 0.5 ? 'heads' : 'tails';
+      won = result === interaction.options.getString('side', true);
+      payout = won ? amount * 2 : 0;
+      resultText = `The coin landed on **${result}**.`;
+    } else {
+      const symbols = ['🍒', '🍋', '🍇', '💎', '7️⃣'];
+      const spin = Array.from({ length: 3 }, () => symbols[Math.floor(Math.random() * symbols.length)]);
+      const unique = new Set(spin).size;
+      won = unique === 1 || unique === 2;
+      payout = unique === 1 ? amount * 5 : unique === 2 ? amount * 2 : 0;
+      resultText = `${spin.join(' | ')}\n${unique === 1 ? 'JACKPOT!' : unique === 2 ? 'Two of a kind!' : 'No match this time.'}`;
+    }
+    economy.balances[interaction.user.id] = balance - amount + payout;
+    await saveConfigurations();
+    const net = payout - amount;
+    return replyPrivately(interaction, `${commandName === 'coinflip' ? '🪙 **Coin Flip**' : '🎰 **CU Slots**'}\n${resultText}\n\n${won ? `You won **${payout.toLocaleString()}** coins!` : `You lost **${amount.toLocaleString()}** coins.`}\nBalance: **${economy.balances[interaction.user.id].toLocaleString()}** (${net >= 0 ? '+' : ''}${net.toLocaleString()})`, won ? 'success' : 'info');
+  }
+  return false;
 }
 
 async function validateRole(guild, roleId) {
@@ -1713,6 +1810,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'embed-theme-list') await handleEmbedThemeList(interaction);
       else if (interaction.commandName === 'message-builder') await handleMessageBuilder(interaction);
       else if (interaction.commandName === 'message-edit') await handleMessageEdit(interaction);
+      else if (['balance', 'daily', 'coinflip', 'slots', 'coin-leaderboard', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
       else if (organizedModerationCommandNames.has(interaction.commandName)) await handleOrganizedModerationCommand(interaction, { requireTextChannel, canPost, replyPrivately, ensureConfiguration, saveConfigurations });
       return;
     }
