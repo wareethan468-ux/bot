@@ -102,7 +102,11 @@ const commands = [
   new SlashCommandBuilder().setName('daily').setDescription('Claim your daily CU coins.'),
   new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on heads or tails.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addStringOption((o) => o.setName('side').setDescription('Your pick').setRequired(true).addChoices({ name: 'Heads', value: 'heads' }, { name: 'Tails', value: 'tails' })),
   new SlashCommandBuilder().setName('slots').setDescription('Spin the CU slot machine.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)),
+  new SlashCommandBuilder().setName('dice').setDescription('Guess a dice roll for a big payout.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addIntegerOption((o) => o.setName('guess').setDescription('Pick 1-6').setRequired(true).setMinValue(1).setMaxValue(6)),
+  new SlashCommandBuilder().setName('roulette').setDescription('Pick a roulette number from 0 to 36.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addIntegerOption((o) => o.setName('number').setDescription('Pick 0-36').setRequired(true).setMinValue(0).setMaxValue(36)),
   new SlashCommandBuilder().setName('coin-leaderboard').setDescription('Show the richest CU members.'),
+  new SlashCommandBuilder().setName('economy-config').setDescription('Customize the CU economy.').addStringOption((o) => o.setName('currency').setDescription('Currency name, such as CU Coins').setMaxLength(30)).addStringOption((o) => o.setName('emoji').setDescription('Currency emoji').setMaxLength(8)).addIntegerOption((o) => o.setName('daily-amount').setDescription('Daily reward').setMinValue(0).setMaxValue(1000000)).addIntegerOption((o) => o.setName('starting-balance').setDescription('Balance for new members').setMinValue(0).setMaxValue(1000000)).addIntegerOption((o) => o.setName('max-bet').setDescription('Maximum wager').setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('color').setDescription('Embed color hex').setMaxLength(7)),
+  new SlashCommandBuilder().setName('economy-reset').setDescription('Reset one member or everyone’s CU balance.').addUserOption((o) => o.setName('user').setDescription('Member to reset (leave blank for everyone)')),
   new SlashCommandBuilder().setName('economy-add').setDescription('Add CU coins to a member.').addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Coins to add').setRequired(true).setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(200)),
   new SlashCommandBuilder().setName('economy-remove').setDescription('Remove CU coins from a member.').addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('amount').setDescription('Coins to remove').setRequired(true).setMinValue(1).setMaxValue(1000000000)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(200)),
   new SlashCommandBuilder()
@@ -335,9 +339,15 @@ function configuration(guildId) {
 function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
-  guildConfigurations[guildId].economy ||= { balances: {}, daily: {} };
+  guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
+  guildConfigurations[guildId].economy.currency ||= 'CU Coins';
+  guildConfigurations[guildId].economy.emoji ||= '🪙';
+  guildConfigurations[guildId].economy.dailyAmount ??= 500;
+  guildConfigurations[guildId].economy.startingBalance ??= 0;
+  guildConfigurations[guildId].economy.maxBet ??= 1000000;
+  guildConfigurations[guildId].economy.color ||= '#5865F2';
   guildConfigurations[guildId].panel ||= {};
   guildConfigurations[guildId].tickets ||= { panel: {}, rivalsPanel: {}, open: {}, notificationChannelId: null, tryoutRoleId: null };
   guildConfigurations[guildId].tickets.panel ||= {};
@@ -534,7 +544,7 @@ function helpMessage() {
         { name: 'Giveaways', value: commandGroups.giveaways.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Tickets', value: commandGroups.tickets.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU tryouts + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
-        { name: 'CU economy', value: '`/balance` `/daily` `/coinflip` `/slots` `/coin-leaderboard`', inline: true },
+        { name: 'CU economy', value: '`/balance` `/daily` `/coinflip` `/slots` `/dice` `/roulette` `/coin-leaderboard`', inline: true },
         { name: 'Tracking', value: `${commandGroups.tracking.map((name) => `\`/${name}\``).join('\n')}\nJoin/leave/invite embeds`, inline: true },
         { name: 'Message builder', value: commandGroups.messaging.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Moderation actions', value: '`/addrole` `/removerole` `/kick` `/ban` `/softban` `/unban` `/timeout` `/mute` `/deafen` `/move` `/lock` `/slowmode` `/clear`', inline: false },
@@ -576,8 +586,13 @@ function economyFor(guildId) {
 
 function economyBalance(guildId, userId) {
   const economy = economyFor(guildId);
-  economy.balances[userId] = Math.max(0, Number(economy.balances[userId] || 0));
+  economy.balances[userId] = Math.max(0, Number(economy.balances[userId] ?? economy.startingBalance ?? 0));
   return economy.balances[userId];
+}
+
+function economyLabel(guildId, amount) {
+  const economy = economyFor(guildId);
+  return `${Number(amount).toLocaleString()} ${economy.emoji} ${economy.currency}`;
 }
 
 function requireEconomyManager(interaction) {
@@ -600,9 +615,9 @@ async function handleEconomyCommand(interaction) {
       throw new Error(`You already claimed daily coins. Try again <t:${next}:R>.`);
     }
     economy.daily[interaction.user.id] = Date.now();
-    economy.balances[interaction.user.id] = economyBalance(interaction.guildId, interaction.user.id) + 500;
+    economy.balances[interaction.user.id] = economyBalance(interaction.guildId, interaction.user.id) + economy.dailyAmount;
     await saveConfigurations();
-    return replyPrivately(interaction, '🎁 You claimed **500 CU coins** for today!', 'success');
+    return replyPrivately(interaction, `🎁 You claimed **${economyLabel(interaction.guildId, economy.dailyAmount)}** for today!`, 'success');
   }
   if (commandName === 'coin-leaderboard') {
     const economy = economyFor(interaction.guildId);
@@ -626,11 +641,38 @@ async function handleEconomyCommand(interaction) {
     const verb = commandName === 'economy-add' ? 'added to' : 'removed from';
     return replyPrivately(interaction, `🪙 **${amount.toLocaleString()}** coins ${verb} ${user}. New balance: **${after.toLocaleString()}**.\nReason: ${interaction.options.getString('reason') || 'No reason provided.'}`);
   }
-  if (commandName === 'coinflip' || commandName === 'slots') {
+  if (commandName === 'economy-config') {
+    requireEconomyManager(interaction);
+    const economy = economyFor(interaction.guildId);
+    const updates = {
+      currency: interaction.options.getString('currency'),
+      emoji: interaction.options.getString('emoji'),
+      dailyAmount: interaction.options.getInteger('daily-amount'),
+      startingBalance: interaction.options.getInteger('starting-balance'),
+      maxBet: interaction.options.getInteger('max-bet'),
+      color: interaction.options.getString('color'),
+    };
+    if (updates.color) parseColor(updates.color, 0);
+    if (!Object.values(updates).some((value) => value !== null)) throw new Error('Choose at least one economy setting to change.');
+    Object.assign(economy, Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)));
+    await saveConfigurations();
+    return replyPrivately(interaction, `Economy updated. Currency: **${economy.emoji} ${economy.currency}** • Daily: **${economy.dailyAmount}** • Max bet: **${economy.maxBet}**`, 'success');
+  }
+  if (commandName === 'economy-reset') {
+    requireEconomyManager(interaction);
+    const economy = economyFor(interaction.guildId);
+    const user = interaction.options.getUser('user');
+    if (user) economy.balances[user.id] = economy.startingBalance;
+    else economy.balances = {};
+    await saveConfigurations();
+    return replyPrivately(interaction, user ? `Reset ${user}'s balance to **${economyLabel(interaction.guildId, economy.startingBalance)}**.` : 'Reset every member balance.');
+  }
+  if (['coinflip', 'slots', 'dice', 'roulette'].includes(commandName)) {
     const amount = interaction.options.getInteger('amount', true);
+    const economy = economyFor(interaction.guildId);
+    if (amount > economy.maxBet) throw new Error(`The maximum bet is **${economyLabel(interaction.guildId, economy.maxBet)}**.`);
     const balance = economyBalance(interaction.guildId, interaction.user.id);
     if (amount > balance) throw new Error(`You only have **${balance.toLocaleString()}** CU coins.`);
-    const economy = economyFor(interaction.guildId);
     let won = false;
     let payout = 0;
     let resultText;
@@ -639,18 +681,31 @@ async function handleEconomyCommand(interaction) {
       won = result === interaction.options.getString('side', true);
       payout = won ? amount * 2 : 0;
       resultText = `The coin landed on **${result}**.`;
-    } else {
+    } else if (commandName === 'slots') {
       const symbols = ['🍒', '🍋', '🍇', '💎', '7️⃣'];
       const spin = Array.from({ length: 3 }, () => symbols[Math.floor(Math.random() * symbols.length)]);
       const unique = new Set(spin).size;
       won = unique === 1 || unique === 2;
       payout = unique === 1 ? amount * 5 : unique === 2 ? amount * 2 : 0;
       resultText = `${spin.join(' | ')}\n${unique === 1 ? 'JACKPOT!' : unique === 2 ? 'Two of a kind!' : 'No match this time.'}`;
+    } else if (commandName === 'dice') {
+      const roll = Math.floor(Math.random() * 6) + 1;
+      const guess = interaction.options.getInteger('guess', true);
+      won = roll === guess;
+      payout = won ? amount * 5 : 0;
+      resultText = `The die rolled **${roll}**. You guessed **${guess}**.`;
+    } else {
+      const result = Math.floor(Math.random() * 37);
+      const guess = interaction.options.getInteger('number', true);
+      won = result === guess;
+      payout = won ? amount * 36 : 0;
+      resultText = `Roulette landed on **${result}**. You picked **${guess}**.`;
     }
     economy.balances[interaction.user.id] = balance - amount + payout;
     await saveConfigurations();
     const net = payout - amount;
-    return replyPrivately(interaction, `${commandName === 'coinflip' ? '🪙 **Coin Flip**' : '🎰 **CU Slots**'}\n${resultText}\n\n${won ? `You won **${payout.toLocaleString()}** coins!` : `You lost **${amount.toLocaleString()}** coins.`}\nBalance: **${economy.balances[interaction.user.id].toLocaleString()}** (${net >= 0 ? '+' : ''}${net.toLocaleString()})`, won ? 'success' : 'info');
+    const gameName = commandName === 'coinflip' ? '🪙 **Coin Flip**' : commandName === 'slots' ? '🎰 **CU Slots**' : commandName === 'dice' ? '🎲 **Lucky Dice**' : '🎯 **Roulette**';
+    return replyPrivately(interaction, `${gameName}\n${resultText}\n\n${won ? `You won **${economyLabel(interaction.guildId, payout)}**!` : `You lost **${economyLabel(interaction.guildId, amount)}**.`}\nBalance: **${economyLabel(interaction.guildId, economy.balances[interaction.user.id])}** (${net >= 0 ? '+' : ''}${net.toLocaleString()})`, won ? 'success' : 'info');
   }
   return false;
 }
@@ -1810,7 +1865,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'embed-theme-list') await handleEmbedThemeList(interaction);
       else if (interaction.commandName === 'message-builder') await handleMessageBuilder(interaction);
       else if (interaction.commandName === 'message-edit') await handleMessageEdit(interaction);
-      else if (['balance', 'daily', 'coinflip', 'slots', 'coin-leaderboard', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
+      else if (['balance', 'daily', 'coinflip', 'slots', 'dice', 'roulette', 'coin-leaderboard', 'economy-config', 'economy-reset', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
       else if (organizedModerationCommandNames.has(interaction.commandName)) await handleOrganizedModerationCommand(interaction, { requireTextChannel, canPost, replyPrivately, ensureConfiguration, saveConfigurations });
       return;
     }
