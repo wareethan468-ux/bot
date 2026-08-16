@@ -51,6 +51,7 @@ const TICKET_WHITELIST_MODAL_ID = 'ticket:control-whitelist-modal';
 const TICKET_GENERATE_KEYS_MODAL_ID = 'ticket:control-generate-keys-modal';
 const TICKET_RENAME_MODAL_ID = 'ticket:control-rename-modal';
 const RIVALS_SIGNUP_MODAL_ID = 'ticket:rivals-modal';
+const CU_TRYOUT_TICKET_TYPE = 'CU Tryout Application';
 const WHITELIST_BUTTON_ID = 'whitelist:redeem';
 const WHITELIST_MODAL_ID = 'whitelist:key-modal';
 const inviteCache = new Map();
@@ -168,7 +169,7 @@ const commands = [
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption((option) => option.setName('category').setDescription('Category for newly created tickets').addChannelTypes(ChannelType.GuildCategory).setRequired(true))
     .addRoleOption((option) => option.setName('staff-role').setDescription('Role that can view and reply to tickets').setRequired(true))
-    .addRoleOption((option) => option.setName('tryout-role').setDescription('Role given automatically when a Rivals tryout is accepted'))
+    .addRoleOption((option) => option.setName('tryout-role').setDescription('Role given automatically when a CU tryout is accepted'))
     .addChannelOption((option) => textChannelOption(option.setName('log-channel').setDescription('Optional ticket log channel')))
     .addChannelOption((option) => textChannelOption(option.setName('notification-channel').setDescription('Channel for claims, tryout decisions, and closed-ticket notices'))),
   new SlashCommandBuilder()
@@ -189,7 +190,7 @@ const commands = [
     .addChannelOption((option) => textChannelOption(option.setName('channel').setDescription('Panel channel (defaults to this channel)'))),
   new SlashCommandBuilder()
     .setName('customize-rivals-signup')
-    .setDescription('Customize the Rivals Clan signup panel.')
+    .setDescription('Customize the CU tryout signup panel.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addStringOption((option) => option.setName('title').setDescription('Panel title').setMaxLength(100))
     .addStringOption((option) => option.setName('description').setDescription('Panel description').setMaxLength(1000))
@@ -198,7 +199,7 @@ const commands = [
     .addStringOption((option) => option.setName('button-label').setDescription('Signup button label').setMaxLength(80)),
   new SlashCommandBuilder()
     .setName('rivals-signup-panel')
-    .setDescription('Post the Rivals Clan signup panel.')
+    .setDescription('Post the CU tryout signup panel.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
     .addChannelOption((option) => textChannelOption(option.setName('channel').setDescription('Panel channel (defaults to this channel)'))),
   new SlashCommandBuilder()
@@ -410,14 +411,14 @@ function ticketPanel(panel = {}) {
 function rivalsSignupPanel(panel = {}) {
   const embed = new EmbedBuilder()
     .setColor(parseColor(panel.color, 0xed4245))
-    .setTitle(panel.title || 'Rivals Clan Signup')
-    .setDescription(panel.description || 'Ready to join Rivals? Press the button and complete a short application. Staff will review it in a private ticket.')
+    .setTitle(panel.title || 'CU Tryout Signup')
+    .setDescription(panel.description || 'Want to join CU? Press the button and complete the tryout application. Staff will review it in a private ticket.')
     .setFooter({ text: panel.footer || 'One application per player, please.' })
     .setTimestamp();
   return {
     embeds: [embed],
     components: [new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(RIVALS_SIGNUP_BUTTON_ID).setLabel(panel.buttonLabel || 'Apply to Rivals').setEmoji('⚔️').setStyle(ButtonStyle.Danger),
+      new ButtonBuilder().setCustomId(RIVALS_SIGNUP_BUTTON_ID).setLabel(panel.buttonLabel || 'Apply to CU').setEmoji('⚔️').setStyle(ButtonStyle.Danger),
     )],
   };
 }
@@ -521,7 +522,7 @@ function helpMessage() {
         { name: 'Verification', value: commandGroups.verification.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Giveaways', value: commandGroups.giveaways.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Tickets', value: commandGroups.tickets.map((name) => `\`/${name}\``).join('\n'), inline: true },
-        { name: 'Rivals + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
+        { name: 'CU tryouts + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Tracking', value: `${commandGroups.tracking.map((name) => `\`/${name}\``).join('\n')}\nJoin/leave/invite embeds`, inline: true },
         { name: 'Message builder', value: commandGroups.messaging.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'Moderation actions', value: '`/addrole` `/removerole` `/kick` `/ban` `/softban` `/unban` `/timeout` `/mute` `/deafen` `/move` `/lock` `/slowmode` `/clear`', inline: false },
@@ -1083,7 +1084,7 @@ async function createTicket(interaction, { type, details = [] }) {
   const { botMember } = await validateTicketSetup(interaction.guild, tickets);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const channel = await interaction.guild.channels.create({
-    name: `${type === 'Rivals Clan Application' ? 'rivals' : 'ticket'}-${safeChannelName(interaction.user.username)}`,
+    name: `${type === CU_TRYOUT_TICKET_TYPE ? 'cu-tryout' : 'ticket'}-${safeChannelName(interaction.user.username)}`,
     type: ChannelType.GuildText,
     parent: tickets.categoryId,
     topic: `${type} • Owner: ${interaction.user.id}`,
@@ -1098,10 +1099,10 @@ async function createTicket(interaction, { type, details = [] }) {
   tickets.open[interaction.user.id] = ticket;
   await saveConfigurations();
   await channel.send({ content: `${interaction.user} <@&${tickets.staffRoleId}>`, embeds: [ticketWelcomeEmbed(ticket)], components: ticketCloseComponents() });
-  await channel.send(ticket.type === 'Rivals Clan Application' ? tryoutControlPanel() : ticketControlPanel());
+  await channel.send(ticket.type === CU_TRYOUT_TICKET_TYPE ? tryoutControlPanel() : ticketControlPanel());
   if (details.length) {
     await channel.send({
-      embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('Rivals Application Details').addFields(details).setTimestamp()],
+      embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('CU Tryout Application Details').setDescription(`${interaction.user} applied for a CU tryout. Staff, please review the details below.`).addFields(details).setTimestamp()],
     });
   }
   await ticketLog(interaction.guild, tickets, 'Ticket Opened', `${interaction.user} opened **${type}** in ${channel}.`);
@@ -1144,7 +1145,7 @@ async function handleCustomizeTickets(interaction, panelName) {
   if (fields.color) parseColor(fields.color, 0);
   Object.assign(tickets[panelName], Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== null)));
   await saveConfigurations();
-  return replyPrivately(interaction, `${panelName === 'rivalsPanel' ? 'Rivals signup' : 'Ticket'} panel customization saved.`);
+  return replyPrivately(interaction, `${panelName === 'rivalsPanel' ? 'CU tryout signup' : 'Ticket'} panel customization saved.`);
 }
 
 async function handleTicketPanel(interaction, rivals = false) {
@@ -1154,7 +1155,7 @@ async function handleTicketPanel(interaction, rivals = false) {
   const channel = requireTextChannel(interaction.options.getChannel('channel') || interaction.channel);
   await canPost(interaction.guild, channel);
   await channel.send(rivals ? rivalsSignupPanel(tickets.rivalsPanel) : ticketPanel(tickets.panel));
-  return replyPrivately(interaction, `${rivals ? 'Rivals Clan signup' : 'Ticket'} panel posted in ${channel}.`);
+  return replyPrivately(interaction, `${rivals ? 'CU tryout signup' : 'Ticket'} panel posted in ${channel}.`);
 }
 
 async function handleTicketButton(interaction) {
@@ -1167,28 +1168,32 @@ async function handleTicketButton(interaction) {
 function rivalsSignupModal() {
   return new ModalBuilder()
     .setCustomId(RIVALS_SIGNUP_MODAL_ID)
-    .setTitle('Rivals Clan Application')
+    .setTitle('CU Tryout Application')
     .addComponents(
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('username').setLabel('In-game username').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)),
-      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('platform').setLabel('Platform / region').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('username').setLabel('Roblox username (not display name)').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('device').setLabel('Device: Mobile, Console, or PC').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(20)),
+      new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('rank').setLabel('What is your current rank?').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(100)),
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('experience').setLabel('Experience and why you want to join').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(1000)),
       new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('availability').setLabel('Usual availability (optional)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(200)),
     );
 }
 
 async function handleRivalsSignup(interaction) {
-  if (!ticketConfiguration(interaction.guildId)?.categoryId) return replyPrivately(interaction, 'Rivals applications are not configured yet.', 'error');
+  if (!ticketConfiguration(interaction.guildId)?.categoryId) return replyPrivately(interaction, 'CU tryout applications are not configured yet.', 'error');
   return interaction.showModal(rivalsSignupModal());
 }
 
 async function handleRivalsModal(interaction) {
+  const device = interaction.fields.getTextInputValue('device').trim();
+  if (!/^(mobile|console|pc)$/i.test(device)) throw new Error('Device must be exactly Mobile, Console, or PC.');
   const details = [
-    { name: 'In-game username', value: interaction.fields.getTextInputValue('username') },
-    { name: 'Platform / region', value: interaction.fields.getTextInputValue('platform') },
+    { name: 'Roblox username', value: interaction.fields.getTextInputValue('username') },
+    { name: 'Device', value: device },
+    { name: 'Rank', value: interaction.fields.getTextInputValue('rank') },
     { name: 'Experience', value: interaction.fields.getTextInputValue('experience') },
     { name: 'Availability', value: interaction.fields.getTextInputValue('availability') || 'Not provided' },
   ];
-  return createTicket(interaction, { type: 'Rivals Clan Application', details });
+  return createTicket(interaction, { type: CU_TRYOUT_TICKET_TYPE, details });
 }
 
 async function handleTicketClose(interaction) {
@@ -1256,7 +1261,7 @@ async function handleTicketClaim(interaction) {
 
 async function handleTryoutDecision(interaction, accepted) {
   const { tickets, ticket } = requireTicketStaff(interaction);
-  if (ticket.type !== 'Rivals Clan Application') throw new Error('Accept and deny are only available in tryout tickets.');
+  if (ticket.type !== CU_TRYOUT_TICKET_TYPE && ticket.type !== 'Rivals Clan Application') throw new Error('Accept and deny are only available in tryout tickets.');
   ticket.tryoutStatus = accepted ? 'accepted' : 'denied';
   ticket.decidedBy = interaction.user.id;
   ticket.decidedAt = Date.now();
