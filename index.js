@@ -1207,7 +1207,7 @@ async function handleTicketClose(interaction) {
   await sendTicketNotification(interaction.guild, tickets, new EmbedBuilder()
     .setColor(0x57f287)
     .setTitle('Ticket Closed — Member Available')
-    .setDescription(`${entry.ownerMention} is now available. Create a ticket to join UC.`)
+    .setDescription(`${entry.ownerMention} is now available. Create a ticket to join CU.`)
     .addFields({ name: 'Ticket', value: entry.type, inline: true }, { name: 'Closed by', value: `${interaction.user}`, inline: true })
     .setTimestamp());
   await editPrivateReply(interaction, 'Ticket closed. The channel will now be deleted.');
