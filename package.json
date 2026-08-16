@@ -1,0 +1,19 @@
+{
+  "name": "discord-verification-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A Discord verification panel that assigns a configured role.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "check": "node --check src/index.js"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "dotenv": "^16.6.1"
+  }
+}
