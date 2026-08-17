@@ -40,6 +40,7 @@ const VERIFY_BUTTON_ID = 'verification:grant-role:v1';
 const GIVEAWAY_BUTTON_PREFIX = 'giveaway:enter:';
 const GIVEAWAY_END_BUTTON_PREFIX = 'giveaway:end:';
 const GIVEAWAY_REFRESH_BUTTON_PREFIX = 'giveaway:refresh:';
+const GIVEAWAY_PARTICIPANTS_PREFIX = 'giveaway:participants:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -575,6 +576,12 @@ function giveawayComponents(giveaway, disabled = false) {
       .setCustomId(`${GIVEAWAY_REFRESH_BUTTON_PREFIX}${giveaway.messageId}`)
       .setLabel('Refresh Count')
       .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(`${GIVEAWAY_PARTICIPANTS_PREFIX}${giveaway.messageId}`)
+      .setLabel('View Participants')
+      .setEmoji('👥')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
   )];
@@ -2083,11 +2090,18 @@ function trackServerMessage(message) {
 
 async function handleGiveawayStaffButton(interaction) {
   const ending = interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX);
-  const prefix = ending ? GIVEAWAY_END_BUTTON_PREFIX : GIVEAWAY_REFRESH_BUTTON_PREFIX;
+  const participantsButton = interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX);
+  const prefix = ending ? GIVEAWAY_END_BUTTON_PREFIX : participantsButton ? GIVEAWAY_PARTICIPANTS_PREFIX : GIVEAWAY_REFRESH_BUTTON_PREFIX;
   const messageId = interaction.customId.slice(prefix.length);
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('Only giveaway staff can use this button.');
   const giveaway = configuration(interaction.guildId)?.giveaways?.find((item) => item.messageId === messageId);
   if (!giveaway) throw new Error('This giveaway no longer exists.');
+  if (participantsButton) {
+    const entries = giveaway.entries || [];
+    const mentions = entries.slice(0, 100).map((id, index) => `${index + 1}. <@${id}>`).join('\n') || 'No participants yet.';
+    const suffix = entries.length > 100 ? `\n\nShowing the first 100 of **${entries.length}** participants.` : '';
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle(`Participants — ${giveaway.prize}`).setDescription(`${mentions}${suffix}`).setFooter({ text: `Total participants: ${entries.length}` }).setTimestamp()], flags: MessageFlags.Ephemeral });
+  }
   if (ending) {
     if (giveaway.ended) return replyPrivately(interaction, 'This giveaway has already ended.', 'info');
     await finishGiveaway(interaction.guildId, messageId);
@@ -2159,7 +2173,7 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isButton() && interaction.customId === VERIFY_BUTTON_ID) await handleVerify(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(GIVEAWAY_BUTTON_PREFIX)) await handleGiveawayEntry(interaction);
-    if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX))) await handleGiveawayStaffButton(interaction);
+    if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX))) await handleGiveawayStaffButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
