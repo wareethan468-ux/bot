@@ -334,6 +334,18 @@ const commands = [
     .addBooleanOption((option) => option.setName('timestamp').setDescription('Show the current timestamp'))
     .addAttachmentOption((option) => option.setName('image').setDescription('Image/GIF attached to the embed'))
     .addAttachmentOption((option) => option.setName('file').setDescription('Any additional file to send with the embed')),
+  new SlashCommandBuilder()
+    .setName('channel-access')
+    .setDescription('Allow or remove a role from a channel or category.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption((option) => option.setName('channel').setDescription('Channel or category').addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true))
+    .addRoleOption((option) => option.setName('role').setDescription('Role to manage').setRequired(true))
+    .addStringOption((option) => option.setName('action').setDescription('Access action').setRequired(true).addChoices({ name: 'Allow role', value: 'allow' }, { name: 'Remove role', value: 'remove' })),
+  new SlashCommandBuilder()
+    .setName('channel-access-list')
+    .setDescription('List role access overwrites for a channel or category.')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption((option) => option.setName('channel').setDescription('Channel or category').addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
@@ -634,6 +646,31 @@ function editPrivateReply(interaction, content, type = 'success') {
 function requireAdminServer(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('You need the Manage Server permission to use this command.');
+}
+
+async function handleChannelAccessCommand(interaction) {
+  requireAdminServer(interaction);
+  const channel = interaction.options.getChannel('channel', true);
+  const role = interaction.options.getRole('role');
+  const action = interaction.options.getString('action');
+  const botMember = await interaction.guild.members.fetchMe();
+  if (!botMember.permissions.has(PermissionFlagsBits.ManageChannels)) throw new Error('I need Manage Channels permission.');
+  if (interaction.commandName === 'channel-access-list') {
+    const lines = channel.permissionOverwrites.cache.filter((overwrite) => overwrite.type === 0).map((overwrite) => {
+      const view = overwrite.allow.has(PermissionFlagsBits.ViewChannel) ? 'Allowed' : overwrite.deny.has(PermissionFlagsBits.ViewChannel) ? 'Denied' : 'Inherited';
+      return `<@&${overwrite.id}> — **${view}**`;
+    });
+    return replyPrivately(interaction, `🔐 **Access for ${channel}**\n\n${lines.join('\n') || 'No role-specific access rules configured.'}`, 'info');
+  }
+  if (!role || !action) throw new Error('Choose a role and an access action.');
+  if (role.managed || role.id === interaction.guild.id) throw new Error('Choose a normal, non-managed role.');
+  if (action === 'allow') {
+    await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { ViewChannel: false }, { reason: `Private access configured by ${interaction.user.tag}` });
+    await channel.permissionOverwrites.edit(role, { ViewChannel: true, ReadMessageHistory: true, SendMessages: true }, { reason: `Access granted by ${interaction.user.tag}` });
+    return replyPrivately(interaction, `${role} can now see and use ${channel}. @everyone was denied visibility.`, 'success');
+  }
+  await channel.permissionOverwrites.delete(role.id, `Access removed by ${interaction.user.tag}`);
+  return replyPrivately(interaction, `Removed ${role}'s custom access rule from ${channel}.`, 'success');
 }
 
 function economyFor(guildId) {
@@ -2166,6 +2203,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'embed-theme-list') await handleEmbedThemeList(interaction);
       else if (interaction.commandName === 'message-builder') await handleMessageBuilder(interaction);
       else if (interaction.commandName === 'message-edit') await handleMessageEdit(interaction);
+      else if (interaction.commandName === 'channel-access' || interaction.commandName === 'channel-access-list') await handleChannelAccessCommand(interaction);
       else if (['balance', 'daily', 'coinflip', 'slots', 'dice', 'roulette', 'coin-leaderboard', 'economy-config', 'economy-reset', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
       else if (['duel', 'duel-leaderboard', 'duel-result'].includes(interaction.commandName)) await handleDuelCommand(interaction);
       else if (organizedModerationCommandNames.has(interaction.commandName)) await handleOrganizedModerationCommand(interaction, { requireTextChannel, canPost, replyPrivately, ensureConfiguration, saveConfigurations });
