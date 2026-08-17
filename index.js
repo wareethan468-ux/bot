@@ -649,7 +649,8 @@ function requireAdminServer(interaction) {
 }
 
 async function handleChannelAccessCommand(interaction) {
-  requireAdminServer(interaction);
+  if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageChannels)) throw new Error('You need Manage Channels permission to use this command.');
   const channel = interaction.options.getChannel('channel', true);
   const role = interaction.options.getRole('role');
   const action = interaction.options.getString('action');
