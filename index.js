@@ -65,6 +65,7 @@ const dataFile = join(process.cwd(), 'data', 'guild-config.json');
 const timers = new Map();
 const pendingDuels = new Map();
 let guildConfigurations = {};
+let messageSaveTimer = null;
 
 const textChannelOption = (option) => option.addChannelTypes(ChannelType.GuildText, ChannelType.GuildAnnouncement);
 const legacyModerationCommands = [
@@ -157,6 +158,7 @@ const commands = [
     .addStringOption((option) => option.setName('reward-text').setDescription('Optional text turned into a reward file').setMaxLength(4000))
     .addRoleOption((option) => option.setName('winner-role').setDescription('Optional role automatically given to winners'))
     .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum Discord account age in days').setMinValue(0))
+    .addIntegerOption((option) => option.setName('min-messages').setDescription('Minimum messages sent in this server').setMinValue(0))
     .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
     .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
@@ -188,6 +190,7 @@ const commands = [
     .addStringOption((option) => option.setName('reward-text').setDescription('Updated text reward file').setMaxLength(4000))
     .addRoleOption((option) => option.setName('winner-role').setDescription('Updated winner role'))
     .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum account age in days').setMinValue(0))
+    .addIntegerOption((option) => option.setName('min-messages').setDescription('Minimum messages sent in this server').setMinValue(0))
     .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
     .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
@@ -328,7 +331,7 @@ const commands = [
 ].map((command) => command.toJSON());
 
 const trackingIntentsEnabled = process.env.ENABLE_TRACKING_INTENTS === 'true';
-const clientIntents = [GatewayIntentBits.Guilds];
+const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
 if (trackingIntentsEnabled) clientIntents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildInvites);
 const client = new Client({ intents: clientIntents });
 const rest = new REST({ version: '10' }).setToken(app.token);
@@ -358,6 +361,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
   guildConfigurations[guildId].economy.duelStats ||= {};
+  guildConfigurations[guildId].messageCounts ||= {};
   guildConfigurations[guildId].economy.currency ||= 'CU Coins';
   guildConfigurations[guildId].economy.emoji ||= '🪙';
   guildConfigurations[guildId].economy.dailyAmount ??= 500;
@@ -526,6 +530,7 @@ function tryoutControlPanel() {
 function giveawayEmbed(giveaway, ended = false) {
   const requirements = [];
   if (giveaway.minAccountAgeDays) requirements.push(`Account age: **${giveaway.minAccountAgeDays}+ days**`);
+  if (giveaway.minMessages) requirements.push(`Server messages: **${giveaway.minMessages}+**`);
   if (giveaway.requiredRoleId) requirements.push(`Required role: <@&${giveaway.requiredRoleId}>`);
   if (giveaway.blacklistRoleId) requirements.push(`Blocked role: <@&${giveaway.blacklistRoleId}>`);
   return new EmbedBuilder()
@@ -1853,6 +1858,7 @@ async function handleGiveawayStart(interaction) {
     rewardExtension: extension,
     winnerRoleId: winnerRole?.id || null,
     minAccountAgeDays: interaction.options.getInteger('min-account-age') || 0,
+    minMessages: interaction.options.getInteger('min-messages') || 0,
     requiredRoleId: requiredRole?.id || null,
     blacklistRoleId: blacklistRole?.id || null,
     endsAt: Date.now() + duration,
@@ -1905,6 +1911,8 @@ async function handleGiveawayEdit(interaction) {
   }
   const minAccountAge = interaction.options.getInteger('min-account-age');
   if (minAccountAge !== null) giveaway.minAccountAgeDays = minAccountAge;
+  const minMessages = interaction.options.getInteger('min-messages');
+  if (minMessages !== null) giveaway.minMessages = minMessages;
   const requiredRole = interaction.options.getRole('required-role');
   if (requiredRole) {
     await validateRole(guild, requiredRole.id);
@@ -2021,6 +2029,8 @@ async function handleGiveawayEntry(interaction) {
     const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86_400_000;
     if (ageDays < giveaway.minAccountAgeDays) return replyPrivately(interaction, `Your Discord account must be at least **${giveaway.minAccountAgeDays} days** old to enter.`, 'error');
   }
+  const messageCount = Number(ensureConfiguration(interaction.guildId).messageCounts[interaction.user.id] || 0);
+  if (giveaway.minMessages && messageCount < giveaway.minMessages) return replyPrivately(interaction, `You need at least **${giveaway.minMessages}** server messages to enter. Your count: **${messageCount}**.`, 'error');
   if (giveaway.requiredRoleId || giveaway.blacklistRoleId) {
     const member = await interaction.guild.members.fetch(interaction.user.id);
     if (giveaway.requiredRoleId && !member.roles.cache.has(giveaway.requiredRoleId)) return replyPrivately(interaction, `You need the <@&${giveaway.requiredRoleId}> role to enter.`, 'error');
@@ -2032,6 +2042,18 @@ async function handleGiveawayEntry(interaction) {
   const message = channel?.isTextBased() ? await channel.messages.fetch(giveaway.messageId).catch(() => null) : null;
   if (message) await message.edit({ embeds: [giveawayEmbed(giveaway)], components: giveawayComponents(giveaway) }).catch(() => undefined);
   return replyPrivately(interaction, `You are entered to win **${giveaway.prize}**!`);
+}
+
+function trackServerMessage(message) {
+  if (!message.guildId || message.author?.bot) return;
+  const config = ensureConfiguration(message.guildId);
+  config.messageCounts[message.author.id] = Number(config.messageCounts[message.author.id] || 0) + 1;
+  if (!messageSaveTimer) {
+    messageSaveTimer = setTimeout(() => {
+      messageSaveTimer = null;
+      saveConfigurations().catch((error) => console.error('Could not save message counts:', error));
+    }, 2000);
+  }
 }
 
 async function handleGiveawayStaffButton(interaction) {
@@ -2074,6 +2096,7 @@ client.on('inviteCreate', (invite) => cacheGuildInvites(invite.guild).catch(() =
 client.on('inviteDelete', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('guildMemberAdd', (member) => handleMemberJoin(member).catch((error) => console.error('Join tracking failed:', error)));
 client.on('guildMemberRemove', (member) => sendMemberTracking(member, false, null).catch((error) => console.error('Leave tracking failed:', error)));
+client.on('messageCreate', trackServerMessage);
 
 client.on('interactionCreate', async (interaction) => {
   try {
