@@ -734,7 +734,15 @@ async function handleDuelCommand(interaction) {
     duelStatsFor(interaction.guildId, loser.id).losses += 1;
     duelStatsFor(interaction.guildId, loser.id).duels += 1;
     await saveConfigurations();
-    return replyPrivately(interaction, `Recorded **${winner}** as the winner over **${loser}**.`, 'success');
+    const resultText = `Recorded **${winner}** as the winner over **${loser}**.`;
+    const duelChannel = interaction.channel?.name?.startsWith('duel-') && interaction.channel.deletable ? interaction.channel : null;
+    if (duelChannel) {
+      await duelChannel.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle('🏆 Duel Complete').setDescription(`${winner} defeated ${loser}. This duel chat will close now.`).setTimestamp()] });
+      await replyPrivately(interaction, `${resultText} Closing this duel ticket now.`, 'success');
+      await duelChannel.delete(`Duel result recorded by ${interaction.user.tag}`);
+      return;
+    }
+    return replyPrivately(interaction, resultText, 'success');
   }
   return false;
 }
