@@ -168,17 +168,17 @@ const commands = [
   new SlashCommandBuilder()
     .setName('giveaway-end')
     .setDescription('End an active giveaway immediately.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) => option.setName('message-id').setDescription('Giveaway message ID').setRequired(true).setMaxLength(25)),
   new SlashCommandBuilder()
     .setName('giveaway-reroll')
     .setDescription('Pick new winners for a finished giveaway.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) => option.setName('message-id').setDescription('Giveaway message ID').setRequired(true).setMaxLength(25)),
   new SlashCommandBuilder()
     .setName('giveaway-edit')
     .setDescription('Edit an active giveaway using the same giveaway fields.')
-    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
     .addStringOption((option) => option.setName('message-id').setDescription('Giveaway message ID').setRequired(true).setMaxLength(25))
     .addStringOption((option) => option.setName('prize').setDescription('Updated prize').setMaxLength(200))
     .addStringOption((option) => option.setName('duration').setDescription('Reset duration: 10m, 2h, 3d').setMaxLength(10))
@@ -646,6 +646,11 @@ function editPrivateReply(interaction, content, type = 'success') {
 function requireAdminServer(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('You need the Manage Server permission to use this command.');
+}
+
+function requireAdministrator(interaction) {
+  if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) throw new Error('You need Administrator permission to use this control.');
 }
 
 async function handleChannelAccessCommand(interaction) {
@@ -1939,7 +1944,7 @@ async function handleGiveawayStart(interaction) {
 }
 
 async function handleGiveawayEdit(interaction) {
-  requireAdminServer(interaction);
+  requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
   if (giveaway.ended) throw new Error('That giveaway has already ended and cannot be edited.');
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -2029,7 +2034,7 @@ function getGiveawayForCommand(interaction) {
 }
 
 async function handleGiveawayEnd(interaction) {
-  requireAdminServer(interaction);
+  requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
   if (giveaway.ended) throw new Error('That giveaway has already ended. Use /giveaway-reroll instead.');
   await finishGiveaway(interaction.guildId, giveaway.messageId);
@@ -2037,7 +2042,7 @@ async function handleGiveawayEnd(interaction) {
 }
 
 async function handleGiveawayReroll(interaction) {
-  requireAdminServer(interaction);
+  requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
   if (!giveaway.ended) throw new Error('End this giveaway before rerolling it.');
   const winnerIds = chooseWinners(giveaway.entries, giveaway.winnerCount, giveaway.winnerIds);
@@ -2131,7 +2136,8 @@ async function handleGiveawayStaffButton(interaction) {
   const participantsButton = interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX);
   const prefix = ending ? GIVEAWAY_END_BUTTON_PREFIX : participantsButton ? GIVEAWAY_PARTICIPANTS_PREFIX : GIVEAWAY_REFRESH_BUTTON_PREFIX;
   const messageId = interaction.customId.slice(prefix.length);
-  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('Only giveaway staff can use this button.');
+  if (ending && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) throw new Error('Only Administrators can end giveaways.');
+  if (!ending && !interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('Only giveaway staff can use this button.');
   const giveaway = configuration(interaction.guildId)?.giveaways?.find((item) => item.messageId === messageId);
   if (!giveaway) throw new Error('This giveaway no longer exists.');
   if (participantsButton) {
