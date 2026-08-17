@@ -640,13 +640,14 @@ async function sendDuelChallenge(interaction, payload, serverLink = null) {
   const embed = new EmbedBuilder()
     .setColor(0xfee75c)
     .setTitle(`⚔️ ${payload.mode} CU Duel Challenge`)
-    .setDescription(`${interaction.user} challenged ${opponentMentions}. Each opponent must accept.`)
+    .setDescription(`${interaction.user} challenged ${opponentMentions}. Every participant must accept in their DM.`)
     .addFields({ name: 'Challenger', value: `${interaction.user}`, inline: true }, { name: 'Opponents', value: opponentMentions, inline: true }, { name: 'Format', value: payload.mode, inline: true });
   if (serverLink) embed.addFields({ name: 'Private server', value: serverLink });
   if (warningLines.length) embed.addFields({ name: 'Availability warning', value: warningLines.join('\n') });
   embed.setFooter({ text: 'Accept in your DM from the bot. A private duel ticket opens after everyone accepts.' }).setTimestamp();
   await interaction.reply({ content: opponentMentions, embeds: [embed] });
-  for (const userId of payload.opponents) {
+  const participants = [payload.challengerId, ...payload.opponents];
+  for (const userId of participants) {
     const user = await client.users.fetch(userId).catch(() => null);
     if (!user) continue;
     await user.send({ embeds: [embed], components: [duelButtons(id)] }).catch(() => undefined);
@@ -681,7 +682,8 @@ async function handleDuelButton(interaction) {
   const id = interaction.customId.slice((accepted ? DUEL_ACCEPT_PREFIX : DUEL_DECLINE_PREFIX).length);
   const challenge = pendingDuels.get(id);
   if (!challenge) throw new Error('This duel challenge has expired.');
-  if (!challenge.opponents.includes(interaction.user.id)) throw new Error('You are not an opponent in this duel.');
+  const participants = [challenge.challengerId, ...challenge.opponents];
+  if (!participants.includes(interaction.user.id)) throw new Error('You are not a participant in this duel.');
   if (!accepted) {
     challenge.declined = true;
     pendingDuels.delete(id);
@@ -689,8 +691,8 @@ async function handleDuelButton(interaction) {
     return;
   }
   if (!challenge.accepted.includes(interaction.user.id)) challenge.accepted.push(interaction.user.id);
-  if (challenge.accepted.length < challenge.opponents.length) {
-    await interaction.update({ embeds: [responseEmbed(`You accepted. Waiting for ${challenge.opponents.length - challenge.accepted.length} more opponent(s).`, 'success')], components: [] });
+  if (challenge.accepted.length < participants.length) {
+    await interaction.update({ embeds: [responseEmbed(`You accepted. Waiting for ${participants.length - challenge.accepted.length} more participant(s).`, 'success')], components: [] });
     return;
   }
   pendingDuels.delete(id);
