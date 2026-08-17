@@ -38,6 +38,8 @@ if (missing.length) {
 const app = { token: process.env.DISCORD_TOKEN.trim(), clientId: process.env.CLIENT_ID.trim() };
 const VERIFY_BUTTON_ID = 'verification:grant-role:v1';
 const GIVEAWAY_BUTTON_PREFIX = 'giveaway:enter:';
+const GIVEAWAY_END_BUTTON_PREFIX = 'giveaway:end:';
+const GIVEAWAY_REFRESH_BUTTON_PREFIX = 'giveaway:refresh:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -153,7 +155,10 @@ const commands = [
     .addAttachmentOption((option) => option.setName('reward-file').setDescription('Optional file sent to each winner'))
     .addStringOption((option) => option.setName('reward-file-type').setDescription('Extension for the reward file, such as lua, txt, json, or zip').setMaxLength(10))
     .addStringOption((option) => option.setName('reward-text').setDescription('Optional text turned into a reward file').setMaxLength(4000))
-    .addRoleOption((option) => option.setName('winner-role').setDescription('Optional role automatically given to winners')),
+    .addRoleOption((option) => option.setName('winner-role').setDescription('Optional role automatically given to winners'))
+    .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum Discord account age in days').setMinValue(0))
+    .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
+    .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
     .setName('giveaway-end')
     .setDescription('End an active giveaway immediately.')
@@ -181,7 +186,10 @@ const commands = [
     .addAttachmentOption((option) => option.setName('reward-file').setDescription('Updated reward file'))
     .addStringOption((option) => option.setName('reward-file-type').setDescription('Reward extension, such as lua or txt').setMaxLength(10))
     .addStringOption((option) => option.setName('reward-text').setDescription('Updated text reward file').setMaxLength(4000))
-    .addRoleOption((option) => option.setName('winner-role').setDescription('Updated winner role')),
+    .addRoleOption((option) => option.setName('winner-role').setDescription('Updated winner role'))
+    .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum account age in days').setMinValue(0))
+    .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
+    .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
     .setName('setup-tickets')
     .setDescription('Configure private ticket creation for this server.')
@@ -516,6 +524,10 @@ function tryoutControlPanel() {
 }
 
 function giveawayEmbed(giveaway, ended = false) {
+  const requirements = [];
+  if (giveaway.minAccountAgeDays) requirements.push(`Account age: **${giveaway.minAccountAgeDays}+ days**`);
+  if (giveaway.requiredRoleId) requirements.push(`Required role: <@&${giveaway.requiredRoleId}>`);
+  if (giveaway.blacklistRoleId) requirements.push(`Blocked role: <@&${giveaway.blacklistRoleId}>`);
   return new EmbedBuilder()
     .setColor(parseColor(giveaway.color, ended ? 0x747f8d : 0xfee75c))
     .setTitle(giveaway.title || (ended ? 'Giveaway Ended' : '🎉 Giveaway'))
@@ -524,6 +536,8 @@ function giveawayEmbed(giveaway, ended = false) {
       { name: 'Prize', value: giveaway.prize, inline: true },
       { name: 'Winners', value: String(giveaway.winnerCount), inline: true },
       ...(giveaway.winnerRoleId ? [{ name: 'Winner role', value: `<@&${giveaway.winnerRoleId}>`, inline: true }] : []),
+      { name: 'Participants', value: `**${giveaway.entries.length}**`, inline: true },
+      ...(requirements.length ? [{ name: 'Entry requirements', value: requirements.join('\n') }] : []),
       { name: ended ? 'Ended' : 'Ends', value: ended ? 'This giveaway has ended.' : formatEndTime(giveaway.endsAt) },
     )
     .setFooter({ text: `${giveaway.entries.length} entr${giveaway.entries.length === 1 ? 'y' : 'ies'}` });
@@ -536,6 +550,18 @@ function giveawayComponents(giveaway, disabled = false) {
       .setLabel(disabled ? 'Giveaway ended' : 'Enter Giveaway')
       .setEmoji(disabled ? '🔒' : '🎉')
       .setStyle(disabled ? ButtonStyle.Secondary : ButtonStyle.Primary)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(`${GIVEAWAY_END_BUTTON_PREFIX}${giveaway.messageId}`)
+      .setLabel('End Giveaway')
+      .setEmoji('⏹️')
+      .setStyle(ButtonStyle.Danger)
+      .setDisabled(disabled),
+    new ButtonBuilder()
+      .setCustomId(`${GIVEAWAY_REFRESH_BUTTON_PREFIX}${giveaway.messageId}`)
+      .setLabel('Refresh Count')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Secondary)
       .setDisabled(disabled),
   )];
 }
@@ -1806,6 +1832,10 @@ async function handleGiveawayStart(interaction) {
   const extension = rewardExtension(interaction.options.getString('reward-file-type'));
   const winnerRole = interaction.options.getRole('winner-role');
   if (winnerRole) await validateRole(interaction.guild, winnerRole.id);
+  const requiredRole = interaction.options.getRole('required-role');
+  const blacklistRole = interaction.options.getRole('blacklist-role');
+  if (requiredRole) await validateRole(interaction.guild, requiredRole.id);
+  if (blacklistRole) await validateRole(interaction.guild, blacklistRole.id);
   const giveaway = {
     messageId: null,
     channelId: channel.id,
@@ -1822,6 +1852,9 @@ async function handleGiveawayStart(interaction) {
     rewardText: rewardText || null,
     rewardExtension: extension,
     winnerRoleId: winnerRole?.id || null,
+    minAccountAgeDays: interaction.options.getInteger('min-account-age') || 0,
+    requiredRoleId: requiredRole?.id || null,
+    blacklistRoleId: blacklistRole?.id || null,
     endsAt: Date.now() + duration,
     ended: false,
   };
@@ -1869,6 +1902,18 @@ async function handleGiveawayEdit(interaction) {
   if (winnerRole) {
     await validateRole(guild, winnerRole.id);
     giveaway.winnerRoleId = winnerRole.id;
+  }
+  const minAccountAge = interaction.options.getInteger('min-account-age');
+  if (minAccountAge !== null) giveaway.minAccountAgeDays = minAccountAge;
+  const requiredRole = interaction.options.getRole('required-role');
+  if (requiredRole) {
+    await validateRole(guild, requiredRole.id);
+    giveaway.requiredRoleId = requiredRole.id;
+  }
+  const blacklistRole = interaction.options.getRole('blacklist-role');
+  if (blacklistRole) {
+    await validateRole(guild, blacklistRole.id);
+    giveaway.blacklistRoleId = blacklistRole.id;
   }
   const inlineKeys = interaction.options.getString('keys');
   if (inlineKeys) appendGiveawayKeys(giveaway, inlineKeys);
@@ -1972,9 +2017,40 @@ async function handleGiveawayEntry(interaction) {
   const giveaway = configuration(interaction.guildId)?.giveaways?.find((item) => item.messageId === messageId);
   if (!giveaway || giveaway.ended || Date.now() >= giveaway.endsAt) return replyPrivately(interaction, 'This giveaway has ended.', 'error');
   if (giveaway.entries.includes(interaction.user.id)) return replyPrivately(interaction, 'You are already entered in this giveaway.', 'info');
+  if (giveaway.minAccountAgeDays) {
+    const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86_400_000;
+    if (ageDays < giveaway.minAccountAgeDays) return replyPrivately(interaction, `Your Discord account must be at least **${giveaway.minAccountAgeDays} days** old to enter.`, 'error');
+  }
+  if (giveaway.requiredRoleId || giveaway.blacklistRoleId) {
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    if (giveaway.requiredRoleId && !member.roles.cache.has(giveaway.requiredRoleId)) return replyPrivately(interaction, `You need the <@&${giveaway.requiredRoleId}> role to enter.`, 'error');
+    if (giveaway.blacklistRoleId && member.roles.cache.has(giveaway.blacklistRoleId)) return replyPrivately(interaction, 'You are not eligible for this giveaway.', 'error');
+  }
   giveaway.entries.push(interaction.user.id);
   await saveConfigurations();
+  const channel = await interaction.guild.channels.fetch(giveaway.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(giveaway.messageId).catch(() => null) : null;
+  if (message) await message.edit({ embeds: [giveawayEmbed(giveaway)], components: giveawayComponents(giveaway) }).catch(() => undefined);
   return replyPrivately(interaction, `You are entered to win **${giveaway.prize}**!`);
+}
+
+async function handleGiveawayStaffButton(interaction) {
+  const ending = interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX);
+  const prefix = ending ? GIVEAWAY_END_BUTTON_PREFIX : GIVEAWAY_REFRESH_BUTTON_PREFIX;
+  const messageId = interaction.customId.slice(prefix.length);
+  if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('Only giveaway staff can use this button.');
+  const giveaway = configuration(interaction.guildId)?.giveaways?.find((item) => item.messageId === messageId);
+  if (!giveaway) throw new Error('This giveaway no longer exists.');
+  if (ending) {
+    if (giveaway.ended) return replyPrivately(interaction, 'This giveaway has already ended.', 'info');
+    await finishGiveaway(interaction.guildId, messageId);
+    return replyPrivately(interaction, 'Giveaway ended and winners were selected.', 'success');
+  }
+  const channel = await interaction.guild.channels.fetch(giveaway.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(messageId).catch(() => null) : null;
+  if (!message) throw new Error('The giveaway message could not be found.');
+  await message.edit({ embeds: [giveawayEmbed(giveaway)], components: giveawayComponents(giveaway) });
+  return replyPrivately(interaction, `Participant count refreshed: **${giveaway.entries.length}**.`, 'info');
 }
 
 async function registerGuildCommands(guildId) {
@@ -2035,6 +2111,7 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isButton() && interaction.customId === VERIFY_BUTTON_ID) await handleVerify(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(GIVEAWAY_BUTTON_PREFIX)) await handleGiveawayEntry(interaction);
+    if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX))) await handleGiveawayStaffButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
