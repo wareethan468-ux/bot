@@ -159,6 +159,9 @@ const commands = [
     .addRoleOption((option) => option.setName('winner-role').setDescription('Optional role automatically given to winners'))
     .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum Discord account age in days').setMinValue(0))
     .addIntegerOption((option) => option.setName('min-messages').setDescription('Minimum messages sent in this server').setMinValue(0))
+    .addIntegerOption((option) => option.setName('min-server-days').setDescription('Minimum days the member must be in this server').setMinValue(0))
+    .addBooleanOption((option) => option.setName('require-avatar').setDescription('Require a custom Discord avatar'))
+    .addBooleanOption((option) => option.setName('require-nickname').setDescription('Require a server nickname'))
     .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
     .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
@@ -191,6 +194,9 @@ const commands = [
     .addRoleOption((option) => option.setName('winner-role').setDescription('Updated winner role'))
     .addIntegerOption((option) => option.setName('min-account-age').setDescription('Minimum account age in days').setMinValue(0))
     .addIntegerOption((option) => option.setName('min-messages').setDescription('Minimum messages sent in this server').setMinValue(0))
+    .addIntegerOption((option) => option.setName('min-server-days').setDescription('Minimum days the member must be in this server').setMinValue(0))
+    .addBooleanOption((option) => option.setName('require-avatar').setDescription('Require a custom Discord avatar'))
+    .addBooleanOption((option) => option.setName('require-nickname').setDescription('Require a server nickname'))
     .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
     .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
   new SlashCommandBuilder()
@@ -531,6 +537,9 @@ function giveawayEmbed(giveaway, ended = false) {
   const requirements = [];
   if (giveaway.minAccountAgeDays) requirements.push(`Account age: **${giveaway.minAccountAgeDays}+ days**`);
   if (giveaway.minMessages) requirements.push(`Server messages: **${giveaway.minMessages}+**`);
+  if (giveaway.minServerDays) requirements.push(`Server membership: **${giveaway.minServerDays}+ days**`);
+  if (giveaway.requireAvatar) requirements.push('Custom avatar required');
+  if (giveaway.requireNickname) requirements.push('Server nickname required');
   if (giveaway.requiredRoleId) requirements.push(`Required role: <@&${giveaway.requiredRoleId}>`);
   if (giveaway.blacklistRoleId) requirements.push(`Blocked role: <@&${giveaway.blacklistRoleId}>`);
   return new EmbedBuilder()
@@ -1859,6 +1868,9 @@ async function handleGiveawayStart(interaction) {
     winnerRoleId: winnerRole?.id || null,
     minAccountAgeDays: interaction.options.getInteger('min-account-age') || 0,
     minMessages: interaction.options.getInteger('min-messages') || 0,
+    minServerDays: interaction.options.getInteger('min-server-days') || 0,
+    requireAvatar: interaction.options.getBoolean('require-avatar') || false,
+    requireNickname: interaction.options.getBoolean('require-nickname') || false,
     requiredRoleId: requiredRole?.id || null,
     blacklistRoleId: blacklistRole?.id || null,
     endsAt: Date.now() + duration,
@@ -1913,6 +1925,12 @@ async function handleGiveawayEdit(interaction) {
   if (minAccountAge !== null) giveaway.minAccountAgeDays = minAccountAge;
   const minMessages = interaction.options.getInteger('min-messages');
   if (minMessages !== null) giveaway.minMessages = minMessages;
+  const minServerDays = interaction.options.getInteger('min-server-days');
+  if (minServerDays !== null) giveaway.minServerDays = minServerDays;
+  const requireAvatar = interaction.options.getBoolean('require-avatar');
+  if (requireAvatar !== null) giveaway.requireAvatar = requireAvatar;
+  const requireNickname = interaction.options.getBoolean('require-nickname');
+  if (requireNickname !== null) giveaway.requireNickname = requireNickname;
   const requiredRole = interaction.options.getRole('required-role');
   if (requiredRole) {
     await validateRole(guild, requiredRole.id);
@@ -2031,11 +2049,18 @@ async function handleGiveawayEntry(interaction) {
   }
   const messageCount = Number(ensureConfiguration(interaction.guildId).messageCounts[interaction.user.id] || 0);
   if (giveaway.minMessages && messageCount < giveaway.minMessages) return replyPrivately(interaction, `You need at least **${giveaway.minMessages}** server messages to enter. Your count: **${messageCount}**.`, 'error');
-  if (giveaway.requiredRoleId || giveaway.blacklistRoleId) {
-    const member = await interaction.guild.members.fetch(interaction.user.id);
+  let member = null;
+  if (giveaway.requiredRoleId || giveaway.blacklistRoleId || giveaway.minServerDays || giveaway.requireNickname) {
+    member = await interaction.guild.members.fetch(interaction.user.id);
+    if (giveaway.minServerDays) {
+      const joinedDays = (Date.now() - (member.joinedTimestamp || Date.now())) / 86_400_000;
+      if (joinedDays < giveaway.minServerDays) return replyPrivately(interaction, `You must be in this server for at least **${giveaway.minServerDays} days** to enter.`, 'error');
+    }
     if (giveaway.requiredRoleId && !member.roles.cache.has(giveaway.requiredRoleId)) return replyPrivately(interaction, `You need the <@&${giveaway.requiredRoleId}> role to enter.`, 'error');
     if (giveaway.blacklistRoleId && member.roles.cache.has(giveaway.blacklistRoleId)) return replyPrivately(interaction, 'You are not eligible for this giveaway.', 'error');
+    if (giveaway.requireNickname && !member.nickname) return replyPrivately(interaction, 'You need a server nickname to enter.', 'error');
   }
+  if (giveaway.requireAvatar && !interaction.user.avatar) return replyPrivately(interaction, 'You need a custom Discord avatar to enter.', 'error');
   giveaway.entries.push(interaction.user.id);
   await saveConfigurations();
   const channel = await interaction.guild.channels.fetch(giveaway.channelId).catch(() => null);
