@@ -41,6 +41,7 @@ const GIVEAWAY_BUTTON_PREFIX = 'giveaway:enter:';
 const GIVEAWAY_END_BUTTON_PREFIX = 'giveaway:end:';
 const GIVEAWAY_REFRESH_BUTTON_PREFIX = 'giveaway:refresh:';
 const GIVEAWAY_PARTICIPANTS_PREFIX = 'giveaway:participants:';
+const POLL_VOTE_PREFIX = 'poll:vote:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -200,6 +201,10 @@ const commands = [
     .addBooleanOption((option) => option.setName('require-nickname').setDescription('Require a server nickname'))
     .addRoleOption((option) => option.setName('required-role').setDescription('Role required to enter'))
     .addRoleOption((option) => option.setName('blacklist-role').setDescription('Role blocked from entering')),
+  new SlashCommandBuilder().setName('giveaway-entry-add').setDescription('Administrator: add a user to a giveaway.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Giveaway message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('giveaway-entry-remove').setDescription('Administrator: remove a user from a giveaway.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Giveaway message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('giveaway-blacklist').setDescription('Administrator: blacklist or unblacklist a giveaway user.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Giveaway message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Blacklist action').setRequired(true).addChoices({ name: 'Blacklist', value: 'add' }, { name: 'Remove blacklist', value: 'remove' })),
+  new SlashCommandBuilder().setName('poll-start').setDescription('Create a button poll with live results.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(300)).addStringOption((o) => o.setName('options').setDescription('Comma-separated options (2-5)').setRequired(true).setMaxLength(500)).addStringOption((o) => o.setName('duration').setDescription('Examples: 10m, 2h, 3d').setRequired(true)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Poll channel'))).addStringOption((o) => o.setName('title').setDescription('Poll title').setMaxLength(100)).addStringOption((o) => o.setName('color').setDescription('Embed hex color').setMaxLength(7)),
   new SlashCommandBuilder()
     .setName('setup-tickets')
     .setDescription('Configure private ticket creation for this server.')
@@ -376,6 +381,7 @@ function configuration(guildId) {
 function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
+  guildConfigurations[guildId].polls ||= [];
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
@@ -608,7 +614,7 @@ function helpMessage() {
       .addFields(
         { name: 'Quick start', value: '1. Configure a feature\n2. Customize it (optional)\n3. Post its panel\n4. Use `/help` any time', inline: false },
         { name: 'Verification', value: commandGroups.verification.map((name) => `\`/${name}\``).join('\n'), inline: true },
-        { name: 'Giveaways', value: commandGroups.giveaways.map((name) => `\`/${name}\``).join('\n'), inline: true },
+        { name: 'Giveaways', value: `${commandGroups.giveaways.map((name) => `\`/${name}\``).join('\n')}\n\`/giveaway-entry-add\` \`/giveaway-entry-remove\` \`/giveaway-blacklist\`\n\`/poll-start\``, inline: true },
         { name: 'Tickets', value: commandGroups.tickets.map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU tryouts + whitelist', value: [...commandGroups.rivals, ...commandGroups.whitelist].map((name) => `\`/${name}\``).join('\n'), inline: true },
         { name: 'CU economy', value: '`/balance` `/daily` `/coinflip` `/slots` `/dice` `/roulette` `/coin-leaderboard`', inline: true },
@@ -1909,6 +1915,7 @@ async function handleGiveawayStart(interaction) {
     color,
     winnerCount: interaction.options.getInteger('winners', true),
     entries: [],
+    blacklistIds: [],
     winnerIds: [],
     keys: [],
     delivery: {},
@@ -2033,6 +2040,101 @@ function getGiveawayForCommand(interaction) {
   return giveaway;
 }
 
+async function refreshGiveawayMessage(guild, giveaway) {
+  const channel = await guild.channels.fetch(giveaway.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(giveaway.messageId).catch(() => null) : null;
+  if (message) await message.edit({ embeds: [giveawayEmbed(giveaway, giveaway.ended)], components: giveawayComponents(giveaway, giveaway.ended) });
+}
+
+async function handleGiveawayAdminEntry(interaction, action) {
+  requireAdministrator(interaction);
+  const giveaway = getGiveawayForCommand(interaction);
+  const user = interaction.options.getUser('user', true);
+  giveaway.entries ||= [];
+  giveaway.blacklistIds ||= [];
+  if (action === 'add') {
+    if (!giveaway.entries.includes(user.id)) giveaway.entries.push(user.id);
+  } else {
+    giveaway.entries = giveaway.entries.filter((id) => id !== user.id);
+  }
+  await saveConfigurations();
+  await refreshGiveawayMessage(interaction.guild, giveaway);
+  return replyPrivately(interaction, `${user} was ${action === 'add' ? 'added to' : 'removed from'} the giveaway.`, 'success');
+}
+
+async function handleGiveawayBlacklist(interaction) {
+  requireAdministrator(interaction);
+  const giveaway = getGiveawayForCommand(interaction);
+  const user = interaction.options.getUser('user', true);
+  const action = interaction.options.getString('action', true);
+  giveaway.blacklistIds ||= [];
+  if (action === 'add') {
+    if (!giveaway.blacklistIds.includes(user.id)) giveaway.blacklistIds.push(user.id);
+    giveaway.entries = (giveaway.entries || []).filter((id) => id !== user.id);
+  } else {
+    giveaway.blacklistIds = giveaway.blacklistIds.filter((id) => id !== user.id);
+  }
+  await saveConfigurations();
+  await refreshGiveawayMessage(interaction.guild, giveaway);
+  return replyPrivately(interaction, `${user} was ${action === 'add' ? 'blacklisted from' : 'removed from the blacklist of'} this giveaway.`, 'success');
+}
+
+function pollEmbed(poll, ended = false) {
+  const total = poll.votes.reduce((sum, votes) => sum + votes.length, 0);
+  const lines = poll.options.map((option, index) => `**${index + 1}. ${option}** — ${poll.votes[index].length} vote${poll.votes[index].length === 1 ? '' : 's'}`).join('\n');
+  return new EmbedBuilder().setColor(parseColor(poll.color, ended ? 0x747f8d : 0x5865f2)).setTitle(poll.title || '📊 Poll').setDescription(`**${poll.question}**\n\n${lines}`).addFields({ name: 'Total votes', value: String(total), inline: true }, { name: ended ? 'Status' : 'Ends', value: ended ? 'Poll closed.' : formatEndTime(poll.endsAt), inline: true }).setFooter({ text: 'Vote buttons below • one vote per member' }).setTimestamp();
+}
+
+function pollComponents(poll, disabled = false) {
+  return [new ActionRowBuilder().addComponents(poll.options.map((option, index) => new ButtonBuilder().setCustomId(`${POLL_VOTE_PREFIX}${poll.messageId}:${index}`).setLabel(option.slice(0, 80)).setStyle(ButtonStyle.Primary).setDisabled(disabled)))];
+}
+
+async function finishPoll(guildId, messageId) {
+  const poll = configuration(guildId)?.polls?.find((item) => item.messageId === messageId);
+  if (!poll || poll.ended) return;
+  poll.ended = true;
+  const guild = await client.guilds.fetch(guildId).catch(() => null);
+  const channel = guild && await guild.channels.fetch(poll.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(messageId).catch(() => null) : null;
+  if (message) await message.edit({ embeds: [pollEmbed(poll, true)], components: pollComponents(poll, true) });
+  await saveConfigurations();
+}
+
+async function handlePollStart(interaction) {
+  requireAdminServer(interaction);
+  const channel = requireTextChannel(interaction.options.getChannel('channel') || interaction.channel);
+  await canPost(interaction.guild, channel);
+  const options = interaction.options.getString('options', true).split(',').map((value) => value.trim()).filter(Boolean);
+  if (options.length < 2 || options.length > 5) throw new Error('Polls require between 2 and 5 comma-separated options.');
+  const duration = parseDuration(interaction.options.getString('duration', true));
+  const color = interaction.options.getString('color');
+  if (color) parseColor(color, 0);
+  const poll = { messageId: null, channelId: channel.id, question: interaction.options.getString('question', true), options, title: interaction.options.getString('title'), color, votes: options.map(() => []), endsAt: Date.now() + duration, ended: false };
+  const message = await channel.send({ embeds: [pollEmbed(poll)], components: pollComponents({ ...poll, messageId: 'pending' }) });
+  poll.messageId = message.id;
+  await message.edit({ embeds: [pollEmbed(poll)], components: pollComponents(poll) });
+  ensureConfiguration(interaction.guildId).polls.push(poll);
+  await saveConfigurations();
+  timers.set(`poll:${interaction.guildId}:${poll.messageId}`, setTimeout(() => finishPoll(interaction.guildId, poll.messageId).catch(console.error), duration));
+  return replyPrivately(interaction, `Poll started in ${channel}. Message ID: \`${message.id}\`.`);
+}
+
+async function handlePollVote(interaction) {
+  const raw = interaction.customId.slice(POLL_VOTE_PREFIX.length);
+  const [messageId, indexText] = raw.split(':');
+  const poll = configuration(interaction.guildId)?.polls?.find((item) => item.messageId === messageId);
+  const index = Number(indexText);
+  if (!poll || poll.ended || Date.now() >= poll.endsAt) return replyPrivately(interaction, 'This poll has ended.', 'error');
+  if (!Number.isInteger(index) || !poll.options[index]) throw new Error('That poll option is invalid.');
+  if (poll.votes.some((votes) => votes.includes(interaction.user.id))) return replyPrivately(interaction, 'You already voted in this poll.', 'info');
+  poll.votes[index].push(interaction.user.id);
+  await saveConfigurations();
+  const channel = await interaction.guild.channels.fetch(poll.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(poll.messageId).catch(() => null) : null;
+  if (message) await message.edit({ embeds: [pollEmbed(poll)], components: pollComponents(poll) });
+  return replyPrivately(interaction, `Your vote for **${poll.options[index]}** was recorded.`, 'success');
+}
+
 async function handleGiveawayEnd(interaction) {
   requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
@@ -2092,6 +2194,8 @@ async function handleGiveawayEntry(interaction) {
   const messageId = interaction.customId.slice(GIVEAWAY_BUTTON_PREFIX.length);
   const giveaway = configuration(interaction.guildId)?.giveaways?.find((item) => item.messageId === messageId);
   if (!giveaway || giveaway.ended || Date.now() >= giveaway.endsAt) return replyPrivately(interaction, 'This giveaway has ended.', 'error');
+  giveaway.blacklistIds ||= [];
+  if (giveaway.blacklistIds.includes(interaction.user.id)) return replyPrivately(interaction, 'You are blacklisted from this giveaway.', 'error');
   if (giveaway.entries.includes(interaction.user.id)) return replyPrivately(interaction, 'You are already entered in this giveaway.', 'info');
   if (giveaway.minAccountAgeDays) {
     const ageDays = (Date.now() - interaction.user.createdTimestamp) / 86_400_000;
@@ -2172,6 +2276,10 @@ client.once('clientReady', async (readyClient) => {
   await Promise.allSettled([...readyClient.guilds.cache.values()].map(cacheGuildInvites));
   for (const [guildId, config] of Object.entries(guildConfigurations)) {
     for (const giveaway of config.giveaways || []) scheduleGiveaway(guildId, giveaway);
+    for (const poll of config.polls || []) {
+      if (poll.ended) continue;
+      timers.set(`poll:${guildId}:${poll.messageId}`, setTimeout(() => finishPoll(guildId, poll.messageId).catch((error) => console.error('Could not end poll:', error)), Math.max(0, poll.endsAt - Date.now())));
+    }
   }
 });
 client.on('guildCreate', (guild) => registerGuildCommands(guild.id).catch((error) => console.error('Command registration failed:', error)));
@@ -2190,6 +2298,10 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'verification-panel') await handlePanel(interaction);
       else if (interaction.commandName === 'giveaway-start') await handleGiveawayStart(interaction);
       else if (interaction.commandName === 'giveaway-edit') await handleGiveawayEdit(interaction);
+      else if (interaction.commandName === 'giveaway-entry-add') await handleGiveawayAdminEntry(interaction, 'add');
+      else if (interaction.commandName === 'giveaway-entry-remove') await handleGiveawayAdminEntry(interaction, 'remove');
+      else if (interaction.commandName === 'giveaway-blacklist') await handleGiveawayBlacklist(interaction);
+      else if (interaction.commandName === 'poll-start') await handlePollStart(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
@@ -2219,6 +2331,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === VERIFY_BUTTON_ID) await handleVerify(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(GIVEAWAY_BUTTON_PREFIX)) await handleGiveawayEntry(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX))) await handleGiveawayStaffButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(POLL_VOTE_PREFIX)) await handlePollVote(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
