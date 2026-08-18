@@ -207,6 +207,8 @@ const commands = [
   new SlashCommandBuilder().setName('poll-start').setDescription('Create a button poll with live results.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(300)).addStringOption((o) => o.setName('options').setDescription('Comma-separated options (2-5)').setRequired(true).setMaxLength(500)).addStringOption((o) => o.setName('duration').setDescription('Examples: 10m, 2h, 3d').setRequired(true)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Poll channel'))).addStringOption((o) => o.setName('title').setDescription('Poll title').setMaxLength(100)).addStringOption((o) => o.setName('color').setDescription('Embed hex color').setMaxLength(7)),
   new SlashCommandBuilder().setName('poll-edit').setDescription('Edit an active poll.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addStringOption((o) => o.setName('question').setDescription('Updated question').setMaxLength(300)).addStringOption((o) => o.setName('options').setDescription('Updated comma-separated options (2-5)').setMaxLength(500)).addStringOption((o) => o.setName('duration').setDescription('Reset duration: 10m, 2h, 3d')).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Move poll channel'))).addStringOption((o) => o.setName('title').setDescription('Updated title').setMaxLength(100)).addStringOption((o) => o.setName('color').setDescription('Updated hex color').setMaxLength(7)),
   new SlashCommandBuilder().setName('poll-end').setDescription('End a poll immediately.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)),
+  new SlashCommandBuilder().setName('poll-voters').setDescription('Administrator: list voters for a poll option.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addIntegerOption((o) => o.setName('option').setDescription('Option number').setRequired(true).setMinValue(1).setMaxValue(5)),
+  new SlashCommandBuilder().setName('poll-vote-remove').setDescription('Administrator: remove a user vote.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)),
   new SlashCommandBuilder()
     .setName('setup-tickets')
     .setDescription('Configure private ticket creation for this server.')
@@ -2178,6 +2180,27 @@ async function handlePollEnd(interaction) {
   return replyPrivately(interaction, 'Poll ended and the final results are displayed.', 'success');
 }
 
+async function handlePollAdminCommand(interaction) {
+  requireAdministrator(interaction);
+  const poll = getPollForCommand(interaction);
+  if (interaction.commandName === 'poll-voters') {
+    const option = interaction.options.getInteger('option', true) - 1;
+    if (!poll.options[option]) throw new Error('That poll option does not exist.');
+    const voters = poll.votes[option] || [];
+    return replyPrivately(interaction, `**${poll.options[option]}** voters (${voters.length})\n\n${voters.length ? voters.map((id) => `<@${id}>`).join('\n') : 'No voters for this option.'}`, 'info');
+  }
+  const user = interaction.options.getUser('user', true);
+  for (const votes of poll.votes) {
+    const index = votes.indexOf(user.id);
+    if (index !== -1) votes.splice(index, 1);
+  }
+  await saveConfigurations();
+  const channel = await interaction.guild.channels.fetch(poll.channelId).catch(() => null);
+  const message = channel?.isTextBased() ? await channel.messages.fetch(poll.messageId).catch(() => null) : null;
+  if (message) await message.edit({ embeds: [pollEmbed(poll, poll.ended)], components: pollComponents(poll, poll.ended) });
+  return replyPrivately(interaction, `Removed ${user}'s vote from the poll.`, 'success');
+}
+
 async function handlePollVote(interaction) {
   const raw = interaction.customId.slice(POLL_VOTE_PREFIX.length);
   const [messageId, indexText] = raw.split(':');
@@ -2363,6 +2386,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'poll-start') await handlePollStart(interaction);
       else if (interaction.commandName === 'poll-edit') await handlePollEdit(interaction);
       else if (interaction.commandName === 'poll-end') await handlePollEnd(interaction);
+      else if (interaction.commandName === 'poll-voters' || interaction.commandName === 'poll-vote-remove') await handlePollAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
