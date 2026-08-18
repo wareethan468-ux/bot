@@ -209,6 +209,9 @@ const commands = [
   new SlashCommandBuilder().setName('poll-end').setDescription('End a poll immediately.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)),
   new SlashCommandBuilder().setName('poll-voters').setDescription('Administrator: list voters for a poll option.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addIntegerOption((o) => o.setName('option').setDescription('Option number').setRequired(true).setMinValue(1).setMaxValue(5)),
   new SlashCommandBuilder().setName('poll-vote-remove').setDescription('Administrator: remove a user vote.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)),
+  new SlashCommandBuilder().setName('user-blacklist-add').setDescription('Administrator: blacklist a user ID in this server.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('user-id').setDescription('Discord user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(300)),
+  new SlashCommandBuilder().setName('user-blacklist-remove').setDescription('Administrator: remove a user ID from the blacklist.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('user-id').setDescription('Discord user ID').setRequired(true)),
+  new SlashCommandBuilder().setName('user-blacklist-list').setDescription('Administrator: list blacklisted user IDs.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder()
     .setName('setup-tickets')
     .setDescription('Configure private ticket creation for this server.')
@@ -386,6 +389,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].polls ||= [];
+  guildConfigurations[guildId].userBlacklist ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
@@ -661,6 +665,26 @@ function requireAdminServer(interaction) {
 function requireAdministrator(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) throw new Error('You need Administrator permission to use this control.');
+}
+
+async function handleUserBlacklistCommand(interaction) {
+  requireAdministrator(interaction);
+  const config = ensureConfiguration(interaction.guildId);
+  if (interaction.commandName === 'user-blacklist-list') {
+    const entries = Object.entries(config.userBlacklist);
+    if (!entries.length) return replyPrivately(interaction, 'The server user-ID blacklist is empty.', 'info');
+    return replyPrivately(interaction, `🚫 **Blacklisted user IDs**\n\n${entries.map(([id, item]) => `\`${id}\` — ${item.reason || 'No reason provided'}`).join('\n')}`, 'info');
+  }
+  const userId = interaction.options.getString('user-id', true).trim();
+  if (!/^\d{17,20}$/.test(userId)) throw new Error('Enter a valid Discord user ID (17-20 digits).');
+  if (interaction.commandName === 'user-blacklist-add') {
+    config.userBlacklist[userId] = { reason: interaction.options.getString('reason') || 'No reason provided', addedBy: interaction.user.id, addedAt: Date.now() };
+    await saveConfigurations();
+    return replyPrivately(interaction, `Added \`${userId}\` to this server’s blacklist.`, 'success');
+  }
+  delete config.userBlacklist[userId];
+  await saveConfigurations();
+  return replyPrivately(interaction, `Removed \`${userId}\` from this server’s blacklist.`, 'success');
 }
 
 async function handleChannelAccessCommand(interaction) {
@@ -2373,6 +2397,10 @@ client.on('messageCreate', trackServerMessage);
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    const serverBlacklist = interaction.guildId ? configuration(interaction.guildId)?.userBlacklist || {} : {};
+    if (serverBlacklist[interaction.user.id] && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return replyPrivately(interaction, 'You are blacklisted from using this bot in this server.', 'error');
+    }
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'help') await interaction.reply({ ...helpMessage(), flags: MessageFlags.Ephemeral });
       else if (interaction.commandName === 'setup-verification') await handleSetup(interaction);
@@ -2387,6 +2415,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'poll-edit') await handlePollEdit(interaction);
       else if (interaction.commandName === 'poll-end') await handlePollEnd(interaction);
       else if (interaction.commandName === 'poll-voters' || interaction.commandName === 'poll-vote-remove') await handlePollAdminCommand(interaction);
+      else if (['user-blacklist-add', 'user-blacklist-remove', 'user-blacklist-list'].includes(interaction.commandName)) await handleUserBlacklistCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
