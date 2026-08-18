@@ -205,6 +205,8 @@ const commands = [
   new SlashCommandBuilder().setName('giveaway-entry-remove').setDescription('Administrator: remove a user from a giveaway.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Giveaway message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)),
   new SlashCommandBuilder().setName('giveaway-blacklist').setDescription('Administrator: blacklist or unblacklist a giveaway user.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Giveaway message ID').setRequired(true)).addUserOption((o) => o.setName('user').setDescription('User').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Blacklist action').setRequired(true).addChoices({ name: 'Blacklist', value: 'add' }, { name: 'Remove blacklist', value: 'remove' })),
   new SlashCommandBuilder().setName('poll-start').setDescription('Create a button poll with live results.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('question').setDescription('Poll question').setRequired(true).setMaxLength(300)).addStringOption((o) => o.setName('options').setDescription('Comma-separated options (2-5)').setRequired(true).setMaxLength(500)).addStringOption((o) => o.setName('duration').setDescription('Examples: 10m, 2h, 3d').setRequired(true)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Poll channel'))).addStringOption((o) => o.setName('title').setDescription('Poll title').setMaxLength(100)).addStringOption((o) => o.setName('color').setDescription('Embed hex color').setMaxLength(7)),
+  new SlashCommandBuilder().setName('poll-edit').setDescription('Edit an active poll.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)).addStringOption((o) => o.setName('question').setDescription('Updated question').setMaxLength(300)).addStringOption((o) => o.setName('options').setDescription('Updated comma-separated options (2-5)').setMaxLength(500)).addStringOption((o) => o.setName('duration').setDescription('Reset duration: 10m, 2h, 3d')).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Move poll channel'))).addStringOption((o) => o.setName('title').setDescription('Updated title').setMaxLength(100)).addStringOption((o) => o.setName('color').setDescription('Updated hex color').setMaxLength(7)),
+  new SlashCommandBuilder().setName('poll-end').setDescription('End a poll immediately.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('message-id').setDescription('Poll message ID').setRequired(true)),
   new SlashCommandBuilder()
     .setName('setup-tickets')
     .setDescription('Configure private ticket creation for this server.')
@@ -2119,6 +2121,63 @@ async function handlePollStart(interaction) {
   return replyPrivately(interaction, `Poll started in ${channel}. Message ID: \`${message.id}\`.`);
 }
 
+function getPollForCommand(interaction) {
+  const messageId = interaction.options.getString('message-id', true);
+  const poll = configuration(interaction.guildId)?.polls?.find((item) => item.messageId === messageId);
+  if (!poll) throw new Error('No poll was found with that message ID.');
+  return poll;
+}
+
+async function handlePollEdit(interaction) {
+  requireAdminServer(interaction);
+  const poll = getPollForCommand(interaction);
+  if (poll.ended) throw new Error('That poll has already ended.');
+  const question = interaction.options.getString('question');
+  const rawOptions = interaction.options.getString('options');
+  const duration = interaction.options.getString('duration');
+  const title = interaction.options.getString('title');
+  const color = interaction.options.getString('color');
+  const newChannel = interaction.options.getChannel('channel');
+  if (question !== null) poll.question = question;
+  if (title !== null) poll.title = title;
+  if (color !== null) { parseColor(color, 0); poll.color = color; }
+  if (rawOptions !== null) {
+    const options = rawOptions.split(',').map((value) => value.trim()).filter(Boolean);
+    if (options.length < 2 || options.length > 5) throw new Error('Polls require between 2 and 5 comma-separated options.');
+    poll.options = options;
+    poll.votes = options.map(() => []);
+  }
+  if (duration !== null) poll.endsAt = Date.now() + parseDuration(duration);
+  const oldChannel = await interaction.guild.channels.fetch(poll.channelId).catch(() => null);
+  const targetChannel = newChannel || oldChannel;
+  requireTextChannel(targetChannel);
+  await canPost(interaction.guild, targetChannel);
+  const oldMessage = oldChannel?.isTextBased() ? await oldChannel.messages.fetch(poll.messageId).catch(() => null) : null;
+  if (!oldMessage) throw new Error('The poll message could not be found.');
+  if (targetChannel.id !== poll.channelId) {
+    const newMessage = await targetChannel.send({ embeds: [pollEmbed(poll)], components: pollComponents({ ...poll, messageId: 'pending' }) });
+    poll.channelId = targetChannel.id;
+    poll.messageId = newMessage.id;
+    await newMessage.edit({ embeds: [pollEmbed(poll)], components: pollComponents(poll) });
+    await oldMessage.delete().catch(() => undefined);
+  } else {
+    await oldMessage.edit({ embeds: [pollEmbed(poll)], components: pollComponents(poll) });
+  }
+  await saveConfigurations();
+  const pollTimerKey = `poll:${interaction.guildId}:${poll.messageId}`;
+  if (timers.has(pollTimerKey)) clearTimeout(timers.get(pollTimerKey));
+  timers.set(pollTimerKey, setTimeout(() => finishPoll(interaction.guildId, poll.messageId).catch(console.error), Math.max(0, poll.endsAt - Date.now())));
+  return replyPrivately(interaction, `Poll updated in ${targetChannel}.`, 'success');
+}
+
+async function handlePollEnd(interaction) {
+  requireAdministrator(interaction);
+  const poll = getPollForCommand(interaction);
+  if (poll.ended) throw new Error('That poll has already ended.');
+  await finishPoll(interaction.guildId, poll.messageId);
+  return replyPrivately(interaction, 'Poll ended and the final results are displayed.', 'success');
+}
+
 async function handlePollVote(interaction) {
   const raw = interaction.customId.slice(POLL_VOTE_PREFIX.length);
   const [messageId, indexText] = raw.split(':');
@@ -2302,6 +2361,8 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'giveaway-entry-remove') await handleGiveawayAdminEntry(interaction, 'remove');
       else if (interaction.commandName === 'giveaway-blacklist') await handleGiveawayBlacklist(interaction);
       else if (interaction.commandName === 'poll-start') await handlePollStart(interaction);
+      else if (interaction.commandName === 'poll-edit') await handlePollEdit(interaction);
+      else if (interaction.commandName === 'poll-end') await handlePollEnd(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
