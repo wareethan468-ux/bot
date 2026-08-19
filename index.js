@@ -388,7 +388,7 @@ const commands = [
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addAttachmentOption((o) => o.setName('file4').setDescription('Fourth file')).addAttachmentOption((o) => o.setName('file5').setDescription('Fifth file')).addAttachmentOption((o) => o.setName('file6').setDescription('Sixth file')).addAttachmentOption((o) => o.setName('file7').setDescription('Seventh file')).addAttachmentOption((o) => o.setName('file8').setDescription('Eighth file')).addAttachmentOption((o) => o.setName('file9').setDescription('Ninth file')).addAttachmentOption((o) => o.setName('file10').setDescription('Tenth file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)),
-  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: post a Free, Buyer, or combined library setup panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)),
+  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: customize and deploy a reusable library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200)).addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40)).addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40)),
   new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)),
   new SlashCommandBuilder().setName('config-library-edit').setDescription('Admin: edit a configuration/library entry and upload replacement files.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Existing entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('new-name').setDescription('Optional new name').setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('New description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Replacement text').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('Replacement file 1')).addAttachmentOption((o) => o.setName('file2').setDescription('Replacement file 2')).addAttachmentOption((o) => o.setName('file3').setDescription('Replacement file 3')).addAttachmentOption((o) => o.setName('file4').setDescription('Replacement file 4')).addAttachmentOption((o) => o.setName('file5').setDescription('Replacement file 5')).addAttachmentOption((o) => o.setName('file6').setDescription('Replacement file 6')).addAttachmentOption((o) => o.setName('file7').setDescription('Replacement file 7')).addAttachmentOption((o) => o.setName('file8').setDescription('Replacement file 8')).addAttachmentOption((o) => o.setName('file9').setDescription('Replacement file 9')).addAttachmentOption((o) => o.setName('file10').setDescription('Replacement file 10')).addStringOption((o) => o.setName('file-type').setDescription('Replacement extension').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('Buyer price').setMinValue(0).setMaxValue(1000000000)),
   new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed and buyer role.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)).addRoleOption((o) => o.setName('buyer-role').setDescription('Role required for buyer entries')), 
@@ -469,6 +469,26 @@ function libraryFor(guildId, panelId = 'legacy', create = false) {
     config.libraries[panelId] = { entries: [], panel: {}, buyerAccess: config.library.buyerAccess, buyerRoleId: config.library.buyerRoleId };
   }
   return panelId === 'legacy' ? config.library : config.libraries[panelId] || null;
+}
+
+function namedLibraryKey(name) {
+  const slug = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30);
+  if (!slug) throw new Error('Panel name must contain at least one letter or number.');
+  return `named-${slug}`;
+}
+
+function scopedLibraryPayload(payload, panelId, options = {}) {
+  for (const row of payload.components) {
+    for (const button of row.components) {
+      if (button.data.custom_id?.startsWith(LIBRARY_PANEL_PREFIX) || button.data.custom_id?.startsWith(LIBRARY_STAFF_PREFIX)) {
+        button.setCustomId(`${button.data.custom_id}:${panelId}`);
+      }
+      if (options.browseLabel && button.data.custom_id?.startsWith(LIBRARY_PANEL_PREFIX)) button.setLabel(options.browseLabel);
+      if (options.addLabel && button.data.custom_id?.startsWith(`${LIBRARY_STAFF_PREFIX}add:`)) button.setLabel(options.addLabel);
+    }
+  }
+  if (options.footer) payload.embeds[0].setFooter({ text: options.footer });
+  return payload;
 }
 
 function parseColor(value, fallback) {
@@ -2672,7 +2692,7 @@ async function handleLibraryCommand(interaction) {
 async function handleLibraryPanelButton(interaction) {
   const rawPanelAction = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
   const panelActionParts = rawPanelAction.split(':');
-  const panelId = panelActionParts.length >= 3 ? panelActionParts.pop() : interaction.message.id;
+  const panelId = panelActionParts.length >= 2 ? panelActionParts.pop() : interaction.message.id;
   const tier = panelActionParts.join(':');
   const panelLibrary = libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library;
   if (tier.startsWith('mobile:') || tier.startsWith('copy:')) {
@@ -2727,10 +2747,10 @@ async function handleLibraryEntryButton(interaction) {
 
 async function handleLibraryStaffButton(interaction) {
   requireAdminServer(interaction);
-  const panelId = interaction.message.id;
   const actionAndTier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length).split(':');
   const action = actionAndTier[0];
   const tier = actionAndTier[1];
+  const panelId = actionAndTier[2] || interaction.message.id;
   if (action === 'add') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}:${panelId}`).setTitle('Add Config To This Panel').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Config name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Paragraph).setRequired(false)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text').setStyle(TextInputStyle.Paragraph).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price (0 for free)').setStyle(TextInputStyle.Short).setRequired(false))));
   if (action === 'bulk') return replyPrivately(interaction, '📚 **Bulk library setup**\n\nUse `/config-library-add` for each entry. Upload up to 10 files per entry using file1-file10; large configs should be uploaded as files instead of pasted into chat.', 'info');
   const entries = (libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library).entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
@@ -2740,7 +2760,8 @@ async function handleLibraryStaffButton(interaction) {
   if (action === 'export') return replyPrivately(interaction, entries.length ? `📤 **${tier} export list**\n\n${entries.map((entry) => `\`${entry.name}\` • ${entry.price || 0} coins • ${entry.files.length} file(s)`).join('\n')}` : 'Nothing to export.', 'info');
   if (action === 'refresh') {
     const panel = libraryFor(interaction.guildId, panelId)?.panel || {};
-    return interaction.update(tier === 'both' ? librarySetupPanelPayload(panel) : libraryPanelPayload(tier, panel));
+    const payload = tier === 'both' ? librarySetupPanelPayload(panel) : libraryPanelPayload(tier, panel);
+    return interaction.update(scopedLibraryPayload(payload, panelId, panel));
   }
   if (action === 'settings') return replyPrivately(interaction, 'Use `/config-library-settings` to change the title, description, color, and footer.', 'info');
   if (action === 'pricing') return replyPrivately(interaction, 'Use `/config-library-add` or `/config-library-edit` with `tier:buyer` and a `price`.', 'info');
@@ -2803,15 +2824,19 @@ async function handleLibraryAdminCommand(interaction) {
   if (interaction.commandName === 'library-panel') {
     const channel = requireTextChannel(interaction.options.getChannel('channel', true));
     await canPost(interaction.guild, channel);
+    const panelName = interaction.options.getString('name', true).trim();
+    const panelId = namedLibraryKey(panelName);
     const tier = interaction.options.getString('tier', true);
     const color = interaction.options.getString('color');
     if (color) parseColor(color, 0);
-    const panelOptions = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color };
-    const message = await channel.send(tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions));
-    const deployedLibrary = libraryFor(interaction.guildId, message.id, true);
-    deployedLibrary.panel = { ...panelOptions, tier, channelId: channel.id, messageId: message.id };
+    const deployedLibrary = libraryFor(interaction.guildId, panelId, true);
+    const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color, footer: interaction.options.getString('footer'), browseLabel: interaction.options.getString('browse-label'), addLabel: interaction.options.getString('add-label') };
+    const panelOptions = { ...deployedLibrary.panel, ...Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)), name: panelName, tier };
+    const payload = tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions);
+    const message = await channel.send(scopedLibraryPayload(payload, panelId, panelOptions));
+    deployedLibrary.panel = { ...panelOptions, channelId: channel.id, messageId: message.id };
     await saveConfigurations();
-    return replyPrivately(interaction, `${tier === 'buyer' ? 'Buyer' : tier === 'free' ? 'Free' : 'Combined'} library panel deployed in ${channel} with its own database (ID: \`${message.id}\`). Add, edit, and remove configs with the buttons on that panel.`, 'success');
+    return replyPrivately(interaction, `**${panelName}** deployed in ${channel}. This named panel keeps its own appearance and config database, so you can customize or deploy it again with \`/library-panel name:${panelName}\`.`, 'success');
   }
   if (interaction.commandName === 'config-library-add') {
     const name = interaction.options.getString('name', true).trim();
