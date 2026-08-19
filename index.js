@@ -372,6 +372,8 @@ const commands = [
   new SlashCommandBuilder().setName('maintenance-unlock').setDescription('Administrator: remove maintenance visibility restrictions.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to unlock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)),
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
+  new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
+  new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
@@ -761,6 +763,31 @@ async function handleGlobalBlacklistCommand(interaction) {
   else delete list[targetId];
   await saveConfigurations();
   return replyPrivately(interaction, `${type === 'user' ? 'User' : 'Server'} ID \`${targetId}\` was ${action === 'add' ? 'added to' : 'removed from'} the global blacklist.`, 'success');
+}
+
+async function handleGlobalWhitelistCommand(interaction) {
+  requireBotOwner(interaction);
+  const type = interaction.options.getString('type', true);
+  const action = interaction.options.getString('action', true);
+  const store = accessControlStore();
+  const list = type === 'user' ? store.approvedUsers : store.approvedServers;
+  if (action === 'list') {
+    const ids = Object.keys(list);
+    return replyPrivately(interaction, ids.length ? `✅ Approved ${type} IDs:\n\n${ids.map((id) => `\`${id}\``).join('\n')}` : `No approved ${type} IDs.`, 'info');
+  }
+  const targetId = interaction.options.getString('target-id')?.trim();
+  if (!targetId || !/^\d{17,20}$/.test(targetId)) throw new Error('Enter a valid target ID for add/remove.');
+  if (action === 'add') list[targetId] = { approvedBy: interaction.user.id, approvedAt: Date.now() };
+  else delete list[targetId];
+  await saveConfigurations();
+  return replyPrivately(interaction, `${type === 'user' ? 'User' : 'Server'} ID \`${targetId}\` was ${action === 'add' ? 'added to' : 'removed from'} the global whitelist.`, 'success');
+}
+
+async function handleCommandSearch(interaction) {
+  requireBotOwner(interaction);
+  const query = interaction.options.getString('query', true).toLowerCase();
+  const names = commands.map((command) => command.name).filter((name) => name.includes(query));
+  return replyPrivately(interaction, names.length ? `🔎 Commands matching **${query}**:\n\n${names.map((name) => `\`/${name}\``).join('\n')}` : 'No commands matched that search.', 'info');
 }
 
 async function handleApprovalButton(interaction) {
@@ -2632,6 +2659,8 @@ client.on('interactionCreate', async (interaction) => {
       else if (['server-copy', 'server-paste', 'server-config-copy', 'server-config-paste'].includes(interaction.commandName)) await handleServerTemplateCommand(interaction);
       else if (interaction.commandName === 'request') await handleAccessRequestCommand(interaction);
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
+      else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
+      else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
