@@ -2968,7 +2968,7 @@ client.on('messageCreate', async (message) => {
     const targetGuild = client.guilds.cache.get(guildId);
     if (!targetGuild) return message.reply('I am not in that server.');
     await targetGuild.leave();
-    return message.reply(`Left **${targetGuild.name}** (`${guildId}`).`);
+    return message.reply('Left **' + targetGuild.name + '** (`' + guildId + '`).');
   }
   if (name?.toLowerCase() === 'help' || name?.toLowerCase() === 'commands') {
     await message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Commands').setDescription(`Use slash commands for setup and panels. Prefix: \`${prefix}\`\n\n\`${prefix}help\` — show this guide\n\`${prefix}commands\` — show this guide`).setFooter({ text: 'Use /help for the full command list.' })] });
