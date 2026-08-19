@@ -121,6 +121,7 @@ const legacyModerationCommands = [
 const legacyModerationCommandNames = new Set(legacyModerationCommands.map((command) => command.name));
 const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.').addStringOption((o) => o.setName('category').setDescription('Focus the help embed').addChoices({ name: 'All', value: 'all' }, { name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
+  new SlashCommandBuilder().setName('commands').setDescription('Search commands and show their arguments and descriptions.').addStringOption((o) => o.setName('search').setDescription('Optional command name or keyword').setMaxLength(50)),
   new SlashCommandBuilder().setName('server-copy').setDescription('Administrator: create a reusable server template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder().setName('server-paste').setDescription('Administrator: recreate a copied server template here.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code from /server-copy').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('server-config-copy').setDescription('Administrator: copy ticket and bot configuration into a template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -814,6 +815,16 @@ async function handleCommandSearch(interaction) {
   const categoryNames = category === 'moderation' ? [...organizedModerationCommandNames] : category && commandGroups[category] ? commandGroups[category] : null;
   const names = commands.map((command) => command.name).filter((name) => name.includes(query) && (!categoryNames || (categoryNames instanceof Set ? categoryNames.has(name) : categoryNames.includes(name))));
   return replyPrivately(interaction, names.length ? `🔎 Commands matching **${query}**:\n\n${names.map((name) => `\`/${name}\``).join('\n')}` : 'No commands matched that search.', 'info');
+}
+
+async function handleCommandsHelp(interaction) {
+  const query = interaction.options.getString('search')?.toLowerCase().trim();
+  const list = commands.filter((command) => !query || command.name.includes(query) || command.description?.toLowerCase().includes(query)).slice(0, 15);
+  const text = list.map((command) => {
+    const options = (command.options || []).map((option) => ``${option.name}${option.required ? '*' : ''}``).join(' ');
+    return `**/${command.name} ${options}**\n${command.description || 'No description.'}`;
+  }).join('\n\n');
+  return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📖 Command Search').setDescription(text || 'No commands matched your search.').setFooter({ text: 'Required arguments are marked with *.' })], flags: MessageFlags.Ephemeral });
 }
 
 async function handleApprovalButton(interaction) {
@@ -2980,6 +2991,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
+      else if (interaction.commandName === 'commands') await handleCommandsHelp(interaction);
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
