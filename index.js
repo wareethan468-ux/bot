@@ -49,6 +49,7 @@ const BOT_OWNER_IDS = new Set(['1504236410440253600', '1244476245249626133']);
 const OWNER_ONLY_SERVER_IDS = new Set(['1538272402037809303']);
 const REQUEST_APPROVE_PREFIX = 'access:approve:';
 const REQUEST_DENY_PREFIX = 'access:deny:';
+const LIBRARY_PAGE_PREFIX = 'library:page:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -377,6 +378,11 @@ const commands = [
   new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)),
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
+  new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)),
+  new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)),
+  new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)),
+  new SlashCommandBuilder().setName('library').setDescription('Browse the configuration library.').addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1)).addStringOption((o) => o.setName('get').setDescription('Entry name to DM').setMaxLength(80)),
+  new SlashCommandBuilder().setName('config-library').setDescription('Browse or DM the configuration library.').addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1)).addStringOption((o) => o.setName('get').setDescription('Entry name to DM').setMaxLength(80)),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
@@ -409,6 +415,9 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].polls ||= [];
   guildConfigurations[guildId].reactionRewards ||= [];
+  guildConfigurations[guildId].library ||= { entries: [], panel: {} };
+  guildConfigurations[guildId].library.entries ||= [];
+  guildConfigurations[guildId].library.panel ||= {};
   guildConfigurations[guildId].userBlacklist ||= {};
   guildConfigurations[guildId].serverTemplates ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
@@ -2547,6 +2556,79 @@ async function handleReactionRewardAdd(reaction, user) {
   }
 }
 
+function libraryPagePayload(guildId, page) {
+  const library = ensureConfiguration(guildId).library;
+  const size = 8;
+  const pages = Math.max(1, Math.ceil(library.entries.length / size));
+  const current = Math.min(Math.max(page, 1), pages);
+  const entries = library.entries.slice((current - 1) * size, current * size);
+  const panel = library.panel;
+  const description = entries.length ? entries.map((entry, index) => `**${(current - 1) * size + index + 1}. ${entry.name}** — ${entry.description || 'No description'}\nFiles: **${entry.files.length}**${entry.text ? ' • Text included' : ''}`).join('\n\n') : 'The library is empty.';
+  const embed = new EmbedBuilder().setColor(parseColor(panel.color, 0x5865f2)).setTitle(panel.title || 'Configuration Library').setDescription(panel.description ? `${panel.description}\n\n${description}` : description).setFooter({ text: `${panel.footer || 'Use the get option to receive an entry by DM.'} • Page ${current}/${pages}` }).setTimestamp();
+  const components = [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${LIBRARY_PAGE_PREFIX}${guildId}:${current - 1}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(current <= 1),
+    new ButtonBuilder().setCustomId(`${LIBRARY_PAGE_PREFIX}${guildId}:${current + 1}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(current >= pages),
+  )];
+  return { embeds: [embed], components };
+}
+
+async function sendLibraryEntryDM(interaction, entry) {
+  const files = [];
+  for (const file of entry.files || []) {
+    const response = await fetch(file.url).catch(() => null);
+    if (response?.ok) files.push(new AttachmentBuilder(Buffer.from(await response.arrayBuffer()), { name: file.name }));
+  }
+  if (entry.text) files.push(new AttachmentBuilder(Buffer.from(entry.text, 'utf8'), { name: `${entry.name}.${entry.fileType || 'txt'}` }));
+  await interaction.user.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle(`📦 ${entry.name}`).setDescription(entry.description || 'Your requested configuration is attached.').setTimestamp()], files });
+}
+
+async function handleLibraryCommand(interaction) {
+  const library = ensureConfiguration(interaction.guildId).library;
+  const requested = interaction.options.getString('get')?.trim();
+  if (requested) {
+    const entry = library.entries.find((item) => item.name.toLowerCase() === requested.toLowerCase());
+    if (!entry) throw new Error('That library entry was not found.');
+    await sendLibraryEntryDM(interaction, entry);
+    return replyPrivately(interaction, `**${entry.name}** was sent to your DMs.`, 'success');
+  }
+  return interaction.reply({ ...libraryPagePayload(interaction.guildId, interaction.options.getInteger('page') || 1), flags: MessageFlags.Ephemeral });
+}
+
+async function handleLibraryAdminCommand(interaction) {
+  requireAdminServer(interaction);
+  const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.commandName === 'config-library-add') {
+    const name = interaction.options.getString('name', true).trim();
+    const files = ['file1', 'file2', 'file3'].map((key) => interaction.options.getAttachment(key)).filter(Boolean).map((file) => ({ url: file.url, name: file.name }));
+    const text = interaction.options.getString('text');
+    if (!files.length && !text) throw new Error('Add at least one file or text content.');
+    if (library.entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) throw new Error('A library entry with that name already exists.');
+    library.entries.push({ name, description: interaction.options.getString('description') || null, text: text || null, fileType: rewardExtension(interaction.options.getString('file-type')), files, createdAt: Date.now(), createdBy: interaction.user.id });
+    await saveConfigurations();
+    return replyPrivately(interaction, `Added **${name}** to the configuration library.`, 'success');
+  }
+  if (interaction.commandName === 'config-library-remove') {
+    const name = interaction.options.getString('name', true).trim();
+    const before = library.entries.length;
+    library.entries = library.entries.filter((entry) => entry.name.toLowerCase() !== name.toLowerCase());
+    if (before === library.entries.length) throw new Error('That library entry was not found.');
+    await saveConfigurations();
+    return replyPrivately(interaction, `Removed **${name}** from the library.`, 'success');
+  }
+  const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color: interaction.options.getString('color'), footer: interaction.options.getString('footer') };
+  if (!Object.values(updates).some((value) => value !== null)) throw new Error('Choose at least one library setting.');
+  if (updates.color) parseColor(updates.color, 0);
+  Object.assign(library.panel, Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)));
+  await saveConfigurations();
+  return replyPrivately(interaction, 'Library embed settings saved.', 'success');
+}
+
+async function handleLibraryPageButton(interaction) {
+  const [, guildId, pageText] = interaction.customId.split(':');
+  if (interaction.guildId !== guildId) throw new Error('This library panel belongs to another server.');
+  return interaction.update(libraryPagePayload(guildId, Number(pageText)));
+}
+
 async function handleGiveawayEnd(interaction) {
   requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
@@ -2735,6 +2817,8 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
+      else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
+      else if (['config-library-add', 'config-library-remove', 'config-library-settings'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
@@ -2766,6 +2850,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(GIVEAWAY_BUTTON_PREFIX)) await handleGiveawayEntry(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX))) await handleGiveawayStaffButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(POLL_VOTE_PREFIX)) await handlePollVote(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PAGE_PREFIX)) await handleLibraryPageButton(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
