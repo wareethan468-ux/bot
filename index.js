@@ -821,7 +821,7 @@ async function handleCommandsHelp(interaction) {
   const query = interaction.options.getString('search')?.toLowerCase().trim();
   const list = commands.filter((command) => !query || command.name.includes(query) || command.description?.toLowerCase().includes(query)).slice(0, 15);
   const text = list.map((command) => {
-    const options = (command.options || []).map((option) => ``${option.name}${option.required ? '*' : ''}``).join(' ');
+    const options = (command.options || []).map((option) => `\\`${option.name}${option.required ? '*' : ''}\\``).join(' ');
     return `**/${command.name} ${options}**\n${command.description || 'No description.'}`;
   }).join('\n\n');
   return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📖 Command Search').setDescription(text || 'No commands matched your search.').setFooter({ text: 'Required arguments are marked with *.' })], flags: MessageFlags.Ephemeral });
