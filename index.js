@@ -22,6 +22,7 @@ import {
   MessageFlags,
   ModalBuilder,
   PermissionFlagsBits,
+  Partials,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -374,13 +375,15 @@ const commands = [
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
   new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)),
+  new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
+  new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
 const trackingIntentsEnabled = process.env.ENABLE_TRACKING_INTENTS === 'true';
-const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages];
+const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions];
 if (trackingIntentsEnabled) clientIntents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildInvites);
-const client = new Client({ intents: clientIntents });
+const client = new Client({ intents: clientIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User] });
 const rest = new REST({ version: '10' }).setToken(app.token);
 
 async function loadConfigurations() {
@@ -405,6 +408,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId] ||= {};
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].polls ||= [];
+  guildConfigurations[guildId].reactionRewards ||= [];
   guildConfigurations[guildId].userBlacklist ||= {};
   guildConfigurations[guildId].serverTemplates ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
@@ -2476,6 +2480,73 @@ async function handlePollVote(interaction) {
   return replyPrivately(interaction, `Your vote for **${poll.options[index]}** was recorded.`, 'success');
 }
 
+function reactionEmojiKey(emoji) {
+  return emoji.id || emoji.name;
+}
+
+function normalizeReactionEmoji(value) {
+  const custom = /^<a?:[^:>]+:(\d+)>$/.exec(value);
+  return custom ? custom[1] : value;
+}
+
+async function handleReactionRewardCommand(interaction) {
+  requireAdminServer(interaction);
+  const channel = interaction.options.getChannel('channel', true);
+  const messageId = interaction.options.getString('message-id', true);
+  const emojiInput = interaction.options.getString('emoji', true).trim();
+  const rewardText = interaction.options.getString('reward-text');
+  const rewardFile = interaction.options.getAttachment('reward-file');
+  if (!rewardText && !rewardFile) throw new Error('Provide reward-text or reward-file.');
+  if (rewardText && rewardFile) throw new Error('Choose reward-text or reward-file, not both.');
+  const message = await channel.messages.fetch(messageId).catch(() => null);
+  if (!message) throw new Error('I could not find that message.');
+  const extension = rewardExtension(interaction.options.getString('file-type'));
+  await message.react(emojiInput);
+  const reward = { guildId: interaction.guildId, channelId: channel.id, messageId, emoji: normalizeReactionEmoji(emojiInput), rewardText: rewardText || null, rewardFile: rewardFile ? { url: rewardFile.url, name: `${(rewardFile.name || 'reward').replace(/\.[^.]+$/, '')}.${extension}` } : null, delivered: [], createdBy: interaction.user.id, createdAt: Date.now() };
+  const config = ensureConfiguration(interaction.guildId);
+  config.reactionRewards = config.reactionRewards.filter((item) => !(item.channelId === channel.id && item.messageId === messageId && item.emoji === reward.emoji));
+  config.reactionRewards.push(reward);
+  await saveConfigurations();
+  return replyPrivately(interaction, `Reaction reward configured on ${message}. React with ${emojiInput} to receive it by DM.`, 'success');
+}
+
+async function handleReactionRewardRemove(interaction) {
+  requireAdminServer(interaction);
+  const channel = interaction.options.getChannel('channel', true);
+  const messageId = interaction.options.getString('message-id', true);
+  const config = ensureConfiguration(interaction.guildId);
+  const before = config.reactionRewards.length;
+  config.reactionRewards = config.reactionRewards.filter((item) => !(item.channelId === channel.id && item.messageId === messageId));
+  if (before === config.reactionRewards.length) throw new Error('No reaction reward was found on that message.');
+  await saveConfigurations();
+  return replyPrivately(interaction, 'Reaction rewards removed from that message.', 'success');
+}
+
+async function handleReactionRewardAdd(reaction, user) {
+  if (user.bot) return;
+  if (reaction.partial) await reaction.fetch().catch(() => null);
+  const message = reaction.message;
+  const guildId = message.guildId;
+  if (!guildId) return;
+  const config = configuration(guildId);
+  const key = reactionEmojiKey(reaction.emoji);
+  const reward = config?.reactionRewards?.find((item) => item.channelId === message.channelId && item.messageId === message.id && item.emoji === key);
+  if (!reward || reward.delivered.includes(user.id)) return;
+  const files = [];
+  if (reward.rewardFile?.url) {
+    const response = await fetch(reward.rewardFile.url).catch(() => null);
+    if (response?.ok) files.push(new AttachmentBuilder(Buffer.from(await response.arrayBuffer()), { name: reward.rewardFile.name }));
+  }
+  const dm = { embeds: [new EmbedBuilder().setColor(0x57f287).setTitle('🎁 Reaction Reward').setDescription(reward.rewardText || 'Your reward file is attached.').setFooter({ text: 'Thanks for participating!' }).setTimestamp()], files };
+  try {
+    await user.send(dm);
+    reward.delivered.push(user.id);
+    await saveConfigurations();
+  } catch (error) {
+    console.error(`Could not DM reaction reward to ${user.id}:`, error.message);
+  }
+}
+
 async function handleGiveawayEnd(interaction) {
   requireAdministrator(interaction);
   const giveaway = getGiveawayForCommand(interaction);
@@ -2632,6 +2703,7 @@ client.on('inviteDelete', (invite) => cacheGuildInvites(invite.guild).catch(() =
 client.on('guildMemberAdd', (member) => handleMemberJoin(member).catch((error) => console.error('Join tracking failed:', error)));
 client.on('guildMemberRemove', (member) => sendMemberTracking(member, false, null).catch((error) => console.error('Leave tracking failed:', error)));
 client.on('messageCreate', trackServerMessage);
+client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reaction, user).catch((error) => console.error('Reaction reward failed:', error)));
 
 client.on('interactionCreate', async (interaction) => {
   try {
@@ -2661,6 +2733,8 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
+      else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
+      else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
