@@ -52,6 +52,8 @@ const REQUEST_DENY_PREFIX = 'access:deny:';
 const LIBRARY_PAGE_PREFIX = 'library:page:';
 const LIBRARY_PANEL_PREFIX = 'library:panel:';
 const LIBRARY_STAFF_PREFIX = 'library:staff:';
+const LIBRARY_STAFF_ADD_MODAL_ID = 'library:staff-add-modal';
+const LIBRARY_STAFF_BULK_MODAL_ID = 'library:staff-bulk-modal';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -2579,7 +2581,7 @@ function libraryPagePayload(guildId, page) {
 
 function libraryPanelPayload(tier, options = {}) {
   const buyer = tier === 'buyer';
-  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the button below to browse entries.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}${tier}`).setLabel('Staff Controls').setEmoji('🛠️').setStyle(ButtonStyle.Secondary))] };
+  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the button below to browse entries.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:${tier}`).setLabel('View Entries').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:${tier}`).setLabel('Add Entry').setEmoji('➕').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}bulk:${tier}`).setLabel('Add Multiple').setEmoji('📚').setStyle(ButtonStyle.Primary))] };
 }
 
 async function sendLibraryEntryDM(interaction, entry) {
@@ -2620,9 +2622,44 @@ async function handleLibraryPanelButton(interaction) {
 
 async function handleLibraryStaffButton(interaction) {
   requireAdminServer(interaction);
-  const tier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length);
+  const actionAndTier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length).split(':');
+  const action = actionAndTier[0];
+  const tier = actionAndTier[1];
+  if (action === 'add') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}`).setTitle('Add Library Entry').addComponents(
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(200)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000)),
+    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price in CU coins (0 for free)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(12)),
+  ));
+  if (action === 'bulk') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_BULK_MODAL_ID}:${tier}`).setTitle('Add Multiple Text Entries').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('entries').setLabel('One per line: name | price | text').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000))));
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => (entry.tier || 'free') === tier);
   return replyPrivately(interaction, `Staff view — **${tier}** library entries:\n\n${entries.map((entry) => `• ${entry.name} (${entry.files.length} files)`).join('\n') || 'Empty.'}`, 'info');
+}
+
+async function handleLibraryStaffModal(interaction) {
+  requireAdminServer(interaction);
+  const parts = interaction.customId.split(':');
+  const tier = parts[parts.length - 1];
+  const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID)) {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const price = Number(interaction.fields.getTextInputValue('price') || 0);
+    if (!Number.isInteger(price) || price < 0) throw new Error('Price must be a whole number of CU coins.');
+    library.entries.push({ name, description: interaction.fields.getTextInputValue('description') || null, text: interaction.fields.getTextInputValue('text'), fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
+    await saveConfigurations();
+    return replyPrivately(interaction, `Added **${name}** to the ${tier} library.`, 'success');
+  }
+  const lines = interaction.fields.getTextInputValue('entries').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  let added = 0;
+  for (const line of lines) {
+    const [name, priceText, ...content] = line.split('|').map((part) => part.trim());
+    const price = Number(priceText || 0);
+    if (!name || !content.length || !Number.isInteger(price) || price < 0) continue;
+    library.entries.push({ name, description: 'Bulk-added library entry', text: content.join('|'), fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
+    added += 1;
+  }
+  await saveConfigurations();
+  return replyPrivately(interaction, `Added **${added}** ${tier} library entries.`, 'success');
 }
 
 async function handleLibraryAdminCommand(interaction) {
@@ -2894,6 +2931,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PAGE_PREFIX)) await handleLibraryPageButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
+    if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID))) await handleLibraryStaffModal(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
