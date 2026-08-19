@@ -388,7 +388,7 @@ const commands = [
   new SlashCommandBuilder().setName('library-panel').setDescription('Admin: post a Free, Buyer, or combined library setup panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)),
   new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)),
   new SlashCommandBuilder().setName('config-library-edit').setDescription('Admin: edit a configuration/library entry and upload replacement files.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Existing entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('new-name').setDescription('Optional new name').setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('New description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Replacement text').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('Replacement file 1')).addAttachmentOption((o) => o.setName('file2').setDescription('Replacement file 2')).addAttachmentOption((o) => o.setName('file3').setDescription('Replacement file 3')).addAttachmentOption((o) => o.setName('file4').setDescription('Replacement file 4')).addAttachmentOption((o) => o.setName('file5').setDescription('Replacement file 5')).addAttachmentOption((o) => o.setName('file6').setDescription('Replacement file 6')).addAttachmentOption((o) => o.setName('file7').setDescription('Replacement file 7')).addAttachmentOption((o) => o.setName('file8').setDescription('Replacement file 8')).addAttachmentOption((o) => o.setName('file9').setDescription('Replacement file 9')).addAttachmentOption((o) => o.setName('file10').setDescription('Replacement file 10')).addStringOption((o) => o.setName('file-type').setDescription('Replacement extension').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('Buyer price').setMinValue(0).setMaxValue(1000000000)),
-  new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)),
+  new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed and buyer access.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)).addStringOption((o) => o.setName('buyer-access').setDescription('Buyer entry access method').addChoices({ name: 'CU coins', value: 'coins' }, { name: 'Buyer role', value: 'role' })).addRoleOption((o) => o.setName('buyer-role').setDescription('Role required for buyer entries')), 
   new SlashCommandBuilder().setName('library').setDescription('Browse the configuration library.').addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1)).addStringOption((o) => o.setName('get').setDescription('Entry name to DM').setMaxLength(80)),
   new SlashCommandBuilder().setName('config-library').setDescription('Browse or DM the configuration library.').addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1)).addStringOption((o) => o.setName('get').setDescription('Entry name to DM').setMaxLength(80)),
   ...organizedModerationCommands,
@@ -423,9 +423,10 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].polls ||= [];
   guildConfigurations[guildId].reactionRewards ||= [];
-  guildConfigurations[guildId].library ||= { entries: [], panel: {} };
+  guildConfigurations[guildId].library ||= { entries: [], panel: {}, buyerAccess: 'coins', buyerRoleId: null };
   guildConfigurations[guildId].library.entries ||= [];
   guildConfigurations[guildId].library.panel ||= {};
+  guildConfigurations[guildId].library.buyerAccess ||= 'coins';
   guildConfigurations[guildId].userBlacklist ||= {};
   guildConfigurations[guildId].serverTemplates ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
@@ -2607,7 +2608,9 @@ async function handleLibraryCommand(interaction) {
   if (requested) {
     const entry = library.entries.find((item) => item.name.toLowerCase() === requested.toLowerCase());
     if (!entry) throw new Error('That library entry was not found.');
-    if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
+    if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
+      if (!library.buyerRoleId || !interaction.member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
+    } else if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
       const price = Number(entry.price || 0);
       const balance = economyBalance(interaction.guildId, interaction.user.id);
       if (balance < price) throw new Error(`You need **${economyLabel(interaction.guildId, price)}** to purchase this config. Your balance: **${economyLabel(interaction.guildId, balance)}**.`);
@@ -2634,7 +2637,10 @@ async function handleLibraryEntryButton(interaction) {
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   const entry = entries[index];
   if (!entry) throw new Error('That library entry is no longer available.');
-  if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
+  const library = ensureConfiguration(interaction.guildId).library;
+  if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
+    if (!library.buyerRoleId || !interaction.member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
+  } else if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
     const price = Number(entry.price || 0);
     const balance = economyBalance(interaction.guildId, interaction.user.id);
     if (balance < price) throw new Error(`You need **${economyLabel(interaction.guildId, price)}** to purchase this config.`);
@@ -2753,9 +2759,13 @@ async function handleLibraryAdminCommand(interaction) {
     return replyPrivately(interaction, `Updated **${entry.name}**.`, 'success');
   }
   const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color: interaction.options.getString('color'), footer: interaction.options.getString('footer') };
-  if (!Object.values(updates).some((value) => value !== null)) throw new Error('Choose at least one library setting.');
+  const buyerAccess = interaction.options.getString('buyer-access');
+  const buyerRole = interaction.options.getRole('buyer-role');
+  if (!Object.values(updates).some((value) => value !== null) && !buyerAccess && !buyerRole) throw new Error('Choose at least one library setting.');
   if (updates.color) parseColor(updates.color, 0);
   Object.assign(library.panel, Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)));
+  if (buyerAccess) library.buyerAccess = buyerAccess;
+  if (buyerRole) library.buyerRoleId = buyerRole.id;
   await saveConfigurations();
   return replyPrivately(interaction, 'Library embed settings saved.', 'success');
 }
