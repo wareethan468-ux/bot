@@ -116,7 +116,7 @@ const legacyModerationCommands = [
 ];
 const legacyModerationCommandNames = new Set(legacyModerationCommands.map((command) => command.name));
 const commands = [
-  new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.'),
+  new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.').addStringOption((o) => o.setName('category').setDescription('Focus the help embed').addChoices({ name: 'All', value: 'all' }, { name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('server-copy').setDescription('Administrator: create a reusable server template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder().setName('server-paste').setDescription('Administrator: recreate a copied server template here.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code from /server-copy').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('server-config-copy').setDescription('Administrator: copy ticket and bot configuration into a template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -377,7 +377,7 @@ const commands = [
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
-  new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)),
+  new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)).addStringOption((o) => o.setName('category').setDescription('Optional command category').addChoices({ name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)),
@@ -646,12 +646,12 @@ function giveawayComponents(giveaway, disabled = false) {
   )];
 }
 
-function helpMessage() {
+function helpMessage(category = 'all') {
   return {
     embeds: [new EmbedBuilder()
       .setColor(0x5865f2)
       .setTitle('Bot Command Center')
-      .setDescription('Everything is grouped below. Setup commands are for staff; member-facing panels can then be posted wherever you need them.')
+      .setDescription(`Everything is grouped below. Showing: **${category}**. Setup commands are for staff; member-facing panels can then be posted wherever you need them.`)
       .addFields(
         { name: 'Quick start', value: '1. Configure a feature\n2. Customize it (optional)\n3. Post its panel\n4. Use `/help` any time', inline: false },
         { name: 'Verification', value: commandGroups.verification.map((name) => `\`/${name}\``).join('\n'), inline: true },
@@ -802,7 +802,9 @@ async function handleGlobalWhitelistCommand(interaction) {
 async function handleCommandSearch(interaction) {
   requireBotOwner(interaction);
   const query = interaction.options.getString('query', true).toLowerCase();
-  const names = commands.map((command) => command.name).filter((name) => name.includes(query));
+  const category = interaction.options.getString('category');
+  const categoryNames = category === 'moderation' ? [...organizedModerationCommandNames] : category && commandGroups[category] ? commandGroups[category] : null;
+  const names = commands.map((command) => command.name).filter((name) => name.includes(query) && (!categoryNames || (categoryNames instanceof Set ? categoryNames.has(name) : categoryNames.includes(name))));
   return replyPrivately(interaction, names.length ? `🔎 Commands matching **${query}**:\n\n${names.map((name) => `\`/${name}\``).join('\n')}` : 'No commands matched that search.', 'info');
 }
 
@@ -2835,7 +2837,7 @@ client.on('interactionCreate', async (interaction) => {
       return replyPrivately(interaction, 'You are blacklisted from using this bot in this server.', 'error');
     }
     if (interaction.isChatInputCommand()) {
-      if (interaction.commandName === 'help') await interaction.reply({ ...helpMessage(), flags: MessageFlags.Ephemeral });
+      if (interaction.commandName === 'help') await interaction.reply({ ...helpMessage(interaction.options.getString('category') || 'all'), flags: MessageFlags.Ephemeral });
       else if (interaction.commandName === 'setup-verification') await handleSetup(interaction);
       else if (interaction.commandName === 'customize-verification') await handleCustomize(interaction);
       else if (interaction.commandName === 'verification-panel') await handlePanel(interaction);
