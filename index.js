@@ -2623,7 +2623,15 @@ async function sendLibraryEntryDM(interaction, entry) {
   const files = [];
   for (const file of entry.files || []) {
     const response = await fetch(file.url).catch(() => null);
-    if (response?.ok) files.push(new AttachmentBuilder(Buffer.from(await response.arrayBuffer()), { name: file.name }));
+    if (response?.ok) {
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (file.name.toLowerCase().endsWith('.json')) {
+        try {
+          const parsed = JSON.parse(bytes.toString('utf8'));
+          files.push(new AttachmentBuilder(Buffer.from(JSON.stringify(parsed, null, 2), 'utf8'), { name: `${file.name.replace(/\.json$/i, '')}.txt` }));
+        } catch { files.push(new AttachmentBuilder(bytes, { name: file.name })); }
+      } else files.push(new AttachmentBuilder(bytes, { name: file.name }));
+    }
   }
   if (entry.text) files.push(new AttachmentBuilder(Buffer.from(entry.text, 'utf8'), { name: `${entry.name}.${entry.fileType || 'txt'}` }));
   await interaction.user.send({ embeds: [new EmbedBuilder().setColor(0x57f287).setTitle(`📦 ${entry.name}`).setDescription(entry.description || 'Your requested configuration is attached.').setTimestamp()], files });
