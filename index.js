@@ -397,7 +397,7 @@ const commands = [
 ].map((command) => command.toJSON());
 
 const trackingIntentsEnabled = process.env.ENABLE_TRACKING_INTENTS === 'true';
-const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions];
+const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.MessageContent];
 if (trackingIntentsEnabled) clientIntents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildInvites);
 const client = new Client({ intents: clientIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User] });
 const rest = new REST({ version: '10' }).setToken(app.token);
