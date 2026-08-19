@@ -844,7 +844,7 @@ async function handleApprovalButton(interaction) {
     await guild.leave();
     delete store.requests[requestId];
     await saveConfigurations();
-    return interaction.update({ embeds: [responseEmbed(`Left server `${request.targetId}`.`, 'info')], components: [] });
+    return interaction.update({ embeds: [responseEmbed('Left server `' + request.targetId + '`.', 'info')], components: [] });
   }
   if (approved) {
     const list = request.type === 'user' ? store.approvedUsers : store.approvedServers;
