@@ -427,6 +427,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].polls ||= [];
   guildConfigurations[guildId].reactionRewards ||= [];
   guildConfigurations[guildId].library ||= { entries: [], panel: {}, buyerAccess: 'coins', buyerRoleId: null };
+  guildConfigurations[guildId].libraries ||= {};
   guildConfigurations[guildId].library.entries ||= [];
   guildConfigurations[guildId].library.panel ||= {};
   // Buyer configs use the configured Discord role; do not charge CU coins.
@@ -460,6 +461,14 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].themes ||= {};
   guildConfigurations[guildId].warnings ||= {};
   return guildConfigurations[guildId];
+}
+
+function libraryFor(guildId, panelId = 'legacy', create = false) {
+  const config = ensureConfiguration(guildId);
+  if (!config.libraries[panelId] && create) {
+    config.libraries[panelId] = { entries: [], panel: {}, buyerAccess: config.library.buyerAccess, buyerRoleId: config.library.buyerRoleId };
+  }
+  return panelId === 'legacy' ? config.library : config.libraries[panelId] || null;
 }
 
 function parseColor(value, fallback) {
@@ -2661,23 +2670,28 @@ async function handleLibraryCommand(interaction) {
 }
 
 async function handleLibraryPanelButton(interaction) {
-  const tier = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
+  const rawPanelAction = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
+  const panelActionParts = rawPanelAction.split(':');
+  const panelId = panelActionParts.length >= 3 ? panelActionParts.pop() : interaction.message.id;
+  const tier = panelActionParts.join(':');
+  const panelLibrary = libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library;
   if (tier.startsWith('mobile:') || tier.startsWith('copy:')) {
     const [mode, selectedTier] = tier.split(':');
-    const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => selectedTier === 'both' || (entry.tier || 'free') === selectedTier);
+    const entries = panelLibrary.entries.filter((entry) => selectedTier === 'both' || (entry.tier || 'free') === selectedTier);
     const text = entries.map((entry) => `${entry.name} — ${entry.description || 'No description'}`).join('\n');
     return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(mode === 'mobile' ? '📱 Mobile Config View' : '📋 Copyable Config List').setDescription(text || 'No entries available.')], flags: MessageFlags.Ephemeral });
   }
-  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  const entryRows = entries.slice(0, 4).map((entry, index) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:copy`).setLabel(`${entry.name.slice(0, 65)} • Copy`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:dm`).setLabel('Send to DM').setEmoji('📩').setStyle(ButtonStyle.Success)));
-  const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
+  const entries = panelLibrary.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
+  const entryRows = entries.slice(0, 4).map((entry, index) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:copy:${panelId}`).setLabel(`${entry.name.slice(0, 65)} • Copy`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:dm:${panelId}`).setLabel('Send to DM').setEmoji('📩').setStyle(ButtonStyle.Success)));
+  const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}:${panelId}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}:${panelId}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
   return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Config Gallery`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**\n${entry.description || 'Use Copy or Send to DM.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: [...entryRows, new ActionRowBuilder().addComponents(utilityButtons)], flags: MessageFlags.Ephemeral });
 }
 
 async function handleLibraryEntryButton(interaction) {
-  const [tier, indexText, action = 'dm'] = interaction.customId.slice(LIBRARY_GET_PREFIX.length).split(':');
+  const [tier, indexText, action = 'dm', panelId = 'legacy'] = interaction.customId.slice(LIBRARY_GET_PREFIX.length).split(':');
   const index = Number(indexText);
-  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
+  const library = libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library;
+  const entries = library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   const entry = entries[index];
   if (!entry) throw new Error('That library entry is no longer available.');
   if (action === 'copy') {
@@ -2691,13 +2705,12 @@ async function handleLibraryEntryButton(interaction) {
       } else fileText.push(raw);
     }
     const content = [entry.text || '', ...fileText].filter(Boolean).join('\n\n');
-    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:mobile`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:mobile:${panelId}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
   }
   if (action === 'mobile') {
     const content = entry.text || 'This config is file-only. Use Send to DM for attachments.';
     return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`📱 ${entry.name} — Mobile View`).setDescription(content.slice(0, 3900))], flags: MessageFlags.Ephemeral });
   }
-  const library = ensureConfiguration(interaction.guildId).library;
   if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
     const member = await interaction.guild.members.fetch(interaction.user.id);
     if (!library.buyerRoleId || !member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
@@ -2714,17 +2727,21 @@ async function handleLibraryEntryButton(interaction) {
 
 async function handleLibraryStaffButton(interaction) {
   requireAdminServer(interaction);
+  const panelId = interaction.message.id;
   const actionAndTier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length).split(':');
   const action = actionAndTier[0];
   const tier = actionAndTier[1];
-  if (action === 'add') return replyPrivately(interaction, `📦 **Add a ${tier} library entry**\n\nUse the embed-based command setup:\n\`/config-library-add name:<name> tier:${tier} text:<text>\`\n\nUpload files directly in the command using \`file1\` through \`file10\`. Files are delivered when the entry is viewed or sent by DM.`, 'info');
+  if (action === 'add') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}:${panelId}`).setTitle('Add Config To This Panel').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Config name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Paragraph).setRequired(false)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text').setStyle(TextInputStyle.Paragraph).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price (0 for free)').setStyle(TextInputStyle.Short).setRequired(false))));
   if (action === 'bulk') return replyPrivately(interaction, '📚 **Bulk library setup**\n\nUse `/config-library-add` for each entry. Upload up to 10 files per entry using file1-file10; large configs should be uploaded as files instead of pasted into chat.', 'info');
-  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  if (action === 'edit') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_EDIT_MODAL_ID}:${tier}`).setTitle('Edit Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Existing entry name').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new-name').setLabel('New name (optional)').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Paragraph)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Text/config (optional)').setStyle(TextInputStyle.Paragraph))));
-  if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
+  const entries = (libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library).entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
+  if (action === 'edit') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_EDIT_MODAL_ID}:${tier}:${panelId}`).setTitle('Edit Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Existing entry name').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new-name').setLabel('New name (optional)').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Paragraph)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Text/config (optional)').setStyle(TextInputStyle.Paragraph))));
+  if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}:${panelId}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
   if (action === 'stats') return replyPrivately(interaction, `📈 **${tier} library stats**\nEntries: **${entries.length}**\nFiles: **${entries.reduce((sum, entry) => sum + entry.files.length, 0)}**\nText entries: **${entries.filter((entry) => entry.text).length}**`, 'info');
   if (action === 'export') return replyPrivately(interaction, entries.length ? `📤 **${tier} export list**\n\n${entries.map((entry) => `\`${entry.name}\` • ${entry.price || 0} coins • ${entry.files.length} file(s)`).join('\n')}` : 'Nothing to export.', 'info');
-  if (action === 'refresh') return interaction.update(libraryPanelPayload(tier));
+  if (action === 'refresh') {
+    const panel = libraryFor(interaction.guildId, panelId)?.panel || {};
+    return interaction.update(tier === 'both' ? librarySetupPanelPayload(panel) : libraryPanelPayload(tier, panel));
+  }
   if (action === 'settings') return replyPrivately(interaction, 'Use `/config-library-settings` to change the title, description, color, and footer.', 'info');
   if (action === 'pricing') return replyPrivately(interaction, 'Use `/config-library-add` or `/config-library-edit` with `tier:buyer` and a `price`.', 'info');
   return replyPrivately(interaction, `Staff view — **${tier}** library entries:\n\n${entries.map((entry) => `• ${entry.name} (${entry.files.length} files)`).join('\n') || 'Empty.'}`, 'info');
@@ -2733,8 +2750,9 @@ async function handleLibraryStaffButton(interaction) {
 async function handleLibraryStaffModal(interaction) {
   requireAdminServer(interaction);
   const parts = interaction.customId.split(':');
-  const tier = parts[parts.length - 1];
-  const library = ensureConfiguration(interaction.guildId).library;
+  const panelId = parts.length > 3 ? parts.at(-1) : 'legacy';
+  const tier = parts.length > 3 ? parts.at(-2) : parts.at(-1);
+  const library = libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library;
   if (interaction.customId.startsWith(LIBRARY_STAFF_EDIT_MODAL_ID)) {
     const name = interaction.fields.getTextInputValue('name').trim();
     const entry = library.entries.find((item) => item.name.toLowerCase() === name.toLowerCase());
@@ -2752,6 +2770,7 @@ async function handleLibraryStaffModal(interaction) {
   if (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID)) {
     const name = interaction.fields.getTextInputValue('name').trim();
     const price = Number(interaction.fields.getTextInputValue('price') || 0);
+    if (library.entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) throw new Error('A config with that name already exists on this panel.');
     if (!Number.isInteger(price) || price < 0) throw new Error('Price must be a whole number of CU coins.');
     library.entries.push({ name, description: interaction.fields.getTextInputValue('description') || null, text: interaction.fields.getTextInputValue('text'), fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
     await saveConfigurations();
@@ -2788,8 +2807,11 @@ async function handleLibraryAdminCommand(interaction) {
     const color = interaction.options.getString('color');
     if (color) parseColor(color, 0);
     const panelOptions = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color };
-    await channel.send(tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions));
-    return replyPrivately(interaction, `${tier === 'buyer' ? 'Buyer' : 'Free'} library panel posted in ${channel}.`, 'success');
+    const message = await channel.send(tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions));
+    const deployedLibrary = libraryFor(interaction.guildId, message.id, true);
+    deployedLibrary.panel = { ...panelOptions, tier, channelId: channel.id, messageId: message.id };
+    await saveConfigurations();
+    return replyPrivately(interaction, `${tier === 'buyer' ? 'Buyer' : tier === 'free' ? 'Free' : 'Combined'} library panel deployed in ${channel} with its own database (ID: \`${message.id}\`). Add, edit, and remove configs with the buttons on that panel.`, 'success');
   }
   if (interaction.commandName === 'config-library-add') {
     const name = interaction.options.getString('name', true).trim();
