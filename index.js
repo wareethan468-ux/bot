@@ -121,6 +121,27 @@ const legacyModerationCommands = [
   new SlashCommandBuilder().setName('unhide').setDescription('Show a channel to everyone.').setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Target channel'))),
 ];
 const legacyModerationCommandNames = new Set(legacyModerationCommands.map((command) => command.name));
+
+function addConfigPanelOptions(command, { channel = false, tierRequired = false } = {}) {
+  command.addStringOption((o) => o.setName('name').setDescription('Reusable config panel name').setRequired(true).setMaxLength(30));
+  if (channel) command.addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true)));
+  command
+    .addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(tierRequired).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' }))
+    .addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100))
+    .addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000))
+    .addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7))
+    .addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200))
+    .addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40))
+    .addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40))
+    .addStringOption((o) => o.setName('copy-label').setDescription('Copy button label').setMaxLength(40))
+    .addStringOption((o) => o.setName('dm-label').setDescription('DM button label').setMaxLength(40))
+    .addStringOption((o) => o.setName('mobile-label').setDescription('Mobile view button label').setMaxLength(40))
+    .addStringOption((o) => o.setName('support-text').setDescription('Support/contact text shown on the panel').setMaxLength(200))
+    .addStringOption((o) => o.setName('thumbnail-url').setDescription('Small panel image URL').setMaxLength(300))
+    .addStringOption((o) => o.setName('image-url').setDescription('Large panel image URL').setMaxLength(300));
+  return command;
+}
+
 const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.').addStringOption((o) => o.setName('category').setDescription('Focus the help embed').addChoices({ name: 'All', value: 'all' }, { name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('commands').setDescription('Search commands and show their arguments and descriptions.').addStringOption((o) => o.setName('search').setDescription('Optional command name or keyword').setMaxLength(50)),
@@ -388,8 +409,12 @@ const commands = [
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addAttachmentOption((o) => o.setName('file4').setDescription('Fourth file')).addAttachmentOption((o) => o.setName('file5').setDescription('Fifth file')).addAttachmentOption((o) => o.setName('file6').setDescription('Sixth file')).addAttachmentOption((o) => o.setName('file7').setDescription('Seventh file')).addAttachmentOption((o) => o.setName('file8').setDescription('Eighth file')).addAttachmentOption((o) => o.setName('file9').setDescription('Ninth file')).addAttachmentOption((o) => o.setName('file10').setDescription('Tenth file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)).addStringOption((o) => o.setName('panel-name').setDescription('Optional reusable panel database name').setMaxLength(30)),
-  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: customize and deploy a reusable library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200)).addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40)).addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40)).addStringOption((o) => o.setName('copy-label').setDescription('Copy button label').setMaxLength(40)).addStringOption((o) => o.setName('dm-label').setDescription('DM button label').setMaxLength(40)).addStringOption((o) => o.setName('mobile-label').setDescription('Mobile view button label').setMaxLength(40)).addStringOption((o) => o.setName('support-text').setDescription('Support/contact text shown on the panel').setMaxLength(200)).addStringOption((o) => o.setName('thumbnail-url').setDescription('Small panel image URL').setMaxLength(300)).addStringOption((o) => o.setName('image-url').setDescription('Large panel image URL').setMaxLength(300)),
-  new SlashCommandBuilder().setName('library-panel-deploy').setDescription('Admin: create/customize and deploy a reusable library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200)).addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40)).addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40)).addStringOption((o) => o.setName('copy-label').setDescription('Copy button label').setMaxLength(40)).addStringOption((o) => o.setName('dm-label').setDescription('DM button label').setMaxLength(40)).addStringOption((o) => o.setName('mobile-label').setDescription('Mobile view button label').setMaxLength(40)).addStringOption((o) => o.setName('support-text').setDescription('Support/contact text shown on the panel').setMaxLength(200)).addStringOption((o) => o.setName('thumbnail-url').setDescription('Small panel image URL').setMaxLength(300)).addStringOption((o) => o.setName('image-url').setDescription('Large panel image URL').setMaxLength(300)),
+  addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel').setDescription('Admin: create a reusable config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { tierRequired: true }),
+  addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel-edit').setDescription('Admin: edit a saved config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)),
+  new SlashCommandBuilder().setName('config-panel-remove').setDescription('Admin: remove a saved config panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable config panel name').setRequired(true).setMaxLength(30)),
+  addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel-deploy').setDescription('Admin: create/update and deploy a reusable config panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { channel: true, tierRequired: true }),
+  addConfigPanelOptions(new SlashCommandBuilder().setName('library-panel').setDescription('Admin: create a reusable config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { tierRequired: true }),
+  addConfigPanelOptions(new SlashCommandBuilder().setName('library-panel-deploy').setDescription('Admin: create/update and deploy a reusable config panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { channel: true, tierRequired: true }),
   new SlashCommandBuilder().setName('library-db-copy').setDescription('Admin: export/copy a named panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('library-db-paste').setDescription('Admin: paste/import a named panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addStringOption((o) => o.setName('database').setDescription('JSON copied from /library-db-copy').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file').setDescription('JSON file from /library-db-copy')).addStringOption((o) => o.setName('mode').setDescription('Replace or merge entries').addChoices({ name: 'Replace', value: 'replace' }, { name: 'Merge', value: 'merge' })),
   new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('panel-name').setDescription('Optional reusable panel database name').setMaxLength(30)),
@@ -484,7 +509,7 @@ function libraryFromPanelOption(interaction, create = false) {
   const panelName = interaction.options.getString('panel-name')?.trim();
   if (!panelName) return { library: ensureConfiguration(interaction.guildId).library, label: 'global library' };
   const library = libraryFor(interaction.guildId, namedLibraryKey(panelName), create);
-  if (!library) throw new Error(`The **${panelName}** panel database does not exist yet. Deploy it with /library-panel or create it with /config-library-add.`);
+  if (!library) throw new Error(`The **${panelName}** panel database does not exist yet. Create it with /config-panel or add an entry with /config-library-add.`);
   return { library, label: `${panelName} panel` };
 }
 
@@ -557,6 +582,26 @@ function normalizeLibraryDatabase(data) {
     };
   });
   return { panel: data?.panel && !Array.isArray(data) ? data.panel : {}, buyerAccess: data?.buyerAccess || 'role', buyerRoleId: data?.buyerRoleId || null, entries };
+}
+
+function libraryPanelUpdates(interaction) {
+  const color = interaction.options.getString('color');
+  if (color) parseColor(color, 0);
+  return Object.fromEntries(Object.entries({
+    tier: interaction.options.getString('tier'),
+    title: interaction.options.getString('title'),
+    description: interaction.options.getString('description'),
+    color,
+    footer: interaction.options.getString('footer'),
+    browseLabel: interaction.options.getString('browse-label'),
+    addLabel: interaction.options.getString('add-label'),
+    copyLabel: interaction.options.getString('copy-label'),
+    dmLabel: interaction.options.getString('dm-label'),
+    mobileLabel: interaction.options.getString('mobile-label'),
+    supportText: interaction.options.getString('support-text'),
+    thumbnailUrl: validateUrlOption(interaction.options.getString('thumbnail-url'), 'Thumbnail URL'),
+    imageUrl: validateUrlOption(interaction.options.getString('image-url'), 'Image URL'),
+  }).filter(([, value]) => value !== null));
 }
 
 function parseColor(value, fallback) {
@@ -2951,24 +2996,40 @@ async function handleLibraryAdminCommand(interaction) {
     target.buyerAccess = incoming.buyerAccess;
     target.buyerRoleId = incoming.buyerRoleId;
     await saveConfigurations();
-    return replyPrivately(interaction, `Pasted **${incoming.entries.length}** entries into **${panelName}** using **${mode}** mode. Use \`/library-panel name:${panelName}\` to deploy or refresh it.`, 'success');
+    return replyPrivately(interaction, `Pasted **${incoming.entries.length}** entries into **${panelName}** using **${mode}** mode. Use \`/config-panel-deploy name:${panelName}\` to deploy it.`, 'success');
   }
-  if (interaction.commandName === 'library-panel' || interaction.commandName === 'library-panel-deploy') {
+  if (['config-panel', 'config-panel-edit', 'library-panel'].includes(interaction.commandName)) {
+    const panelName = interaction.options.getString('name', true).trim();
+    const panelId = namedLibraryKey(panelName);
+    const existingLibrary = libraryFor(interaction.guildId, panelId);
+    if (interaction.commandName === 'config-panel-edit' && !existingLibrary) throw new Error(`The **${panelName}** config panel does not exist yet.`);
+    const targetLibrary = existingLibrary || libraryFor(interaction.guildId, panelId, true);
+    targetLibrary.panel = { ...targetLibrary.panel, ...libraryPanelUpdates(interaction), name: panelName };
+    await saveConfigurations();
+    return replyPrivately(interaction, `Saved **${panelName}** as a config panel. Use \`/config-panel-deploy name:${panelName}\` when you want to post it.`, 'success');
+  }
+  if (interaction.commandName === 'config-panel-remove') {
+    const panelName = interaction.options.getString('name', true).trim();
+    const panelId = namedLibraryKey(panelName);
+    const config = ensureConfiguration(interaction.guildId);
+    if (!config.libraries[panelId]) throw new Error(`The **${panelName}** config panel does not exist.`);
+    delete config.libraries[panelId];
+    await saveConfigurations();
+    return replyPrivately(interaction, `Removed the **${panelName}** config panel and its saved database.`, 'success');
+  }
+  if (interaction.commandName === 'config-panel-deploy' || interaction.commandName === 'library-panel-deploy') {
     const channel = requireTextChannel(interaction.options.getChannel('channel', true));
     await canPost(interaction.guild, channel);
     const panelName = interaction.options.getString('name', true).trim();
     const panelId = namedLibraryKey(panelName);
-    const tier = interaction.options.getString('tier', true);
-    const color = interaction.options.getString('color');
-    if (color) parseColor(color, 0);
     const deployedLibrary = libraryFor(interaction.guildId, panelId, true);
-    const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color, footer: interaction.options.getString('footer'), browseLabel: interaction.options.getString('browse-label'), addLabel: interaction.options.getString('add-label'), copyLabel: interaction.options.getString('copy-label'), dmLabel: interaction.options.getString('dm-label'), mobileLabel: interaction.options.getString('mobile-label'), supportText: interaction.options.getString('support-text'), thumbnailUrl: validateUrlOption(interaction.options.getString('thumbnail-url'), 'Thumbnail URL'), imageUrl: validateUrlOption(interaction.options.getString('image-url'), 'Image URL') };
-    const panelOptions = { ...deployedLibrary.panel, ...Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)), name: panelName, tier };
+    const panelOptions = { ...deployedLibrary.panel, ...libraryPanelUpdates(interaction), name: panelName };
+    const tier = panelOptions.tier || 'free';
     const payload = tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions);
     const message = await channel.send(scopedLibraryPayload(payload, panelId, panelOptions));
     deployedLibrary.panel = { ...panelOptions, channelId: channel.id, messageId: message.id };
     await saveConfigurations();
-    return replyPrivately(interaction, `**${panelName}** deployed in ${channel}. This named panel keeps its own appearance and config database, so you can customize or deploy it again with \`/library-panel name:${panelName}\`.`, 'success');
+    return replyPrivately(interaction, `**${panelName}** deployed in ${channel}. This config panel keeps its own appearance and database.`, 'success');
   }
   if (interaction.commandName === 'config-library-add') {
     const target = libraryFromPanelOption(interaction, true);
@@ -3251,7 +3312,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
-      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'library-panel', 'library-panel-deploy', 'library-db-copy', 'library-db-paste'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
+      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy', 'library-panel', 'library-panel-deploy', 'library-db-copy', 'library-db-paste'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
