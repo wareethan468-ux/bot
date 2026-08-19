@@ -735,6 +735,14 @@ function requireAdminServer(interaction) {
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) throw new Error('You need the Manage Server permission to use this command.');
 }
 
+function requireLibraryStaff(interaction) {
+  if (!interaction.guild || !interaction.guildId) throw new Error('This library panel only works in a server.');
+  const tickets = ensureConfiguration(interaction.guildId).tickets;
+  const isManager = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+  const isStaff = Boolean(tickets?.staffRoleId && interaction.member?.roles?.cache?.has(tickets.staffRoleId));
+  if (!isManager && !isStaff) throw new Error('Only staff can use this library panel control.');
+}
+
 function requireAdministrator(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) throw new Error('You need Administrator permission to use this control.');
@@ -2746,7 +2754,7 @@ async function handleLibraryEntryButton(interaction) {
 }
 
 async function handleLibraryStaffButton(interaction) {
-  requireAdminServer(interaction);
+  requireLibraryStaff(interaction);
   const actionAndTier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length).split(':');
   const action = actionAndTier[0];
   const tier = actionAndTier[1];
@@ -2769,7 +2777,7 @@ async function handleLibraryStaffButton(interaction) {
 }
 
 async function handleLibraryStaffModal(interaction) {
-  requireAdminServer(interaction);
+  requireLibraryStaff(interaction);
   const parts = interaction.customId.split(':');
   const panelId = parts.length > 3 ? parts.at(-1) : 'legacy';
   const tier = parts.length > 3 ? parts.at(-2) : parts.at(-1);
