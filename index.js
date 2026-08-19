@@ -54,6 +54,7 @@ const LIBRARY_PANEL_PREFIX = 'library:panel:';
 const LIBRARY_STAFF_PREFIX = 'library:staff:';
 const LIBRARY_STAFF_ADD_MODAL_ID = 'library:staff-add-modal';
 const LIBRARY_STAFF_BULK_MODAL_ID = 'library:staff-bulk-modal';
+const LIBRARY_STAFF_REMOVE_MODAL_ID = 'library:staff-remove-modal';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -2581,7 +2582,7 @@ function libraryPagePayload(guildId, page) {
 
 function libraryPanelPayload(tier, options = {}) {
   const buyer = tier === 'buyer';
-  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the button below to browse entries.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:${tier}`).setLabel('View Entries').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:${tier}`).setLabel('Add Entry').setEmoji('➕').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}bulk:${tier}`).setLabel('Add Multiple').setEmoji('📚').setStyle(ButtonStyle.Primary))] };
+  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the buttons below for library and staff controls.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:${tier}`).setLabel('View').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:${tier}`).setLabel('Add').setEmoji('➕').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}bulk:${tier}`).setLabel('Bulk Add').setEmoji('📚').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}remove:${tier}`).setLabel('Remove').setEmoji('🗑️').setStyle(ButtonStyle.Danger)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}stats:${tier}`).setLabel('Stats').setEmoji('📈').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}export:${tier}`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}refresh:${tier}`).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}settings:${tier}`).setLabel('Settings Help').setEmoji('⚙️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}pricing:${tier}`).setLabel('Pricing Help').setEmoji('💰').setStyle(ButtonStyle.Secondary))] };
 }
 
 async function sendLibraryEntryDM(interaction, entry) {
@@ -2633,6 +2634,12 @@ async function handleLibraryStaffButton(interaction) {
   ));
   if (action === 'bulk') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_BULK_MODAL_ID}:${tier}`).setTitle('Add Multiple Text Entries').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('entries').setLabel('One per line: name | price | text').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000))));
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => (entry.tier || 'free') === tier);
+  if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
+  if (action === 'stats') return replyPrivately(interaction, `📈 **${tier} library stats**\nEntries: **${entries.length}**\nFiles: **${entries.reduce((sum, entry) => sum + entry.files.length, 0)}**\nText entries: **${entries.filter((entry) => entry.text).length}**`, 'info');
+  if (action === 'export') return replyPrivately(interaction, entries.length ? `📤 **${tier} export list**\n\n${entries.map((entry) => `\`${entry.name}\` • ${entry.price || 0} coins • ${entry.files.length} file(s)`).join('\n')}` : 'Nothing to export.', 'info');
+  if (action === 'refresh') return interaction.update(libraryPanelPayload(tier));
+  if (action === 'settings') return replyPrivately(interaction, 'Use `/config-library-settings` to change the title, description, color, and footer.', 'info');
+  if (action === 'pricing') return replyPrivately(interaction, 'Use `/config-library-add` with `tier:buyer` and a `price`, or use the Add/Bulk Add buttons.', 'info');
   return replyPrivately(interaction, `Staff view — **${tier}** library entries:\n\n${entries.map((entry) => `• ${entry.name} (${entry.files.length} files)`).join('\n') || 'Empty.'}`, 'info');
 }
 
@@ -2648,6 +2655,14 @@ async function handleLibraryStaffModal(interaction) {
     library.entries.push({ name, description: interaction.fields.getTextInputValue('description') || null, text: interaction.fields.getTextInputValue('text'), fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
     await saveConfigurations();
     return replyPrivately(interaction, `Added **${name}** to the ${tier} library.`, 'success');
+  }
+  if (interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID)) {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const before = library.entries.length;
+    library.entries = library.entries.filter((entry) => entry.name.toLowerCase() !== name.toLowerCase());
+    if (before === library.entries.length) throw new Error('That library entry was not found.');
+    await saveConfigurations();
+    return replyPrivately(interaction, `Removed **${name}** from the library.`, 'success');
   }
   const lines = interaction.fields.getTextInputValue('entries').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   let added = 0;
@@ -2931,7 +2946,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PAGE_PREFIX)) await handleLibraryPageButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
-    if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID))) await handleLibraryStaffModal(interaction);
+    if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID))) await handleLibraryStaffModal(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
