@@ -2623,9 +2623,10 @@ async function handleLibraryCommand(interaction) {
   if (requested) {
     const entry = library.entries.find((item) => item.name.toLowerCase() === requested.toLowerCase());
     if (!entry) throw new Error('That library entry was not found.');
-    if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
-      if (!library.buyerRoleId || !interaction.member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
-    } else if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
+    if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
+      const member = await interaction.guild.members.fetch(interaction.user.id);
+      if (!library.buyerRoleId || !member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
+    } else if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
       const price = Number(entry.price || 0);
       const balance = economyBalance(interaction.guildId, interaction.user.id);
       if (balance < price) throw new Error(`You need **${economyLabel(interaction.guildId, price)}** to purchase this config. Your balance: **${economyLabel(interaction.guildId, balance)}**.`);
@@ -2654,7 +2655,8 @@ async function handleLibraryEntryButton(interaction) {
   if (!entry) throw new Error('That library entry is no longer available.');
   const library = ensureConfiguration(interaction.guildId).library;
   if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
-    if (!library.buyerRoleId || !interaction.member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
+    const member = await interaction.guild.members.fetch(interaction.user.id);
+    if (!library.buyerRoleId || !member.roles.cache.has(library.buyerRoleId)) throw new Error('You need the configured buyer role to receive this config.');
   } else if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
     const price = Number(entry.price || 0);
     const balance = economyBalance(interaction.guildId, interaction.user.id);
