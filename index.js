@@ -2681,7 +2681,16 @@ async function handleLibraryEntryButton(interaction) {
   const entry = entries[index];
   if (!entry) throw new Error('That library entry is no longer available.');
   if (action === 'copy') {
-    const content = [entry.text || '', ...(entry.files || []).map((file) => file.url)].filter(Boolean).join('\n\n');
+    const fileText = [];
+    for (const file of entry.files || []) {
+      const response = await fetch(file.url).catch(() => null);
+      if (!response?.ok) continue;
+      const raw = Buffer.from(await response.arrayBuffer()).toString('utf8');
+      if (file.name.toLowerCase().endsWith('.json')) {
+        try { fileText.push(JSON.stringify(JSON.parse(raw), null, 2)); } catch { fileText.push(raw); }
+      } else fileText.push(raw);
+    }
+    const content = [entry.text || '', ...fileText].filter(Boolean).join('\n\n');
     return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:mobile`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
   }
   if (action === 'mobile') {
