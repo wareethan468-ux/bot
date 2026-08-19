@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path';
 import {
   ActionRowBuilder,
   AttachmentBuilder,
+  AuditLogEvent,
   ButtonBuilder,
   ButtonStyle,
   ChannelType,
@@ -82,6 +83,7 @@ const inviteCache = new Map();
 const dataFile = join(process.cwd(), 'data', 'guild-config.json');
 const timers = new Map();
 const pendingDuels = new Map();
+const antiNukeHits = new Map();
 let guildConfigurations = {};
 let messageSaveTimer = null;
 
@@ -402,6 +404,7 @@ const commands = [
     .addChannelOption((option) => option.setName('channel').setDescription('Channel or category').addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
   new SlashCommandBuilder().setName('maintenance-lock').setDescription('Administrator: lock a category to one maintenance role.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to lock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)).addRoleOption((o) => o.setName('role').setDescription('Only this role can see the category').setRequired(true)),
   new SlashCommandBuilder().setName('maintenance-unlock').setDescription('Administrator: remove maintenance visibility restrictions.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to unlock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)),
+  new SlashCommandBuilder().setName('anti-nuke').setDescription('Configure light anti-nuke burst alerts.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addBooleanOption((o) => o.setName('enabled').setDescription('Turn anti-nuke monitoring on or off')).addChannelOption((o) => textChannelOption(o.setName('log-channel').setDescription('Where alerts should be sent'))).addStringOption((o) => o.setName('action').setDescription('What to do when a burst is detected').addChoices({ name: 'Alert only', value: 'alert' }, { name: 'Alert + timeout', value: 'timeout' })).addIntegerOption((o) => o.setName('threshold').setDescription('Actions before alerting, default 5').setMinValue(3).setMaxValue(20)).addIntegerOption((o) => o.setName('window-seconds').setDescription('Time window, default 60 seconds').setMinValue(30).setMaxValue(300)).addIntegerOption((o) => o.setName('timeout-minutes').setDescription('Timeout length for timeout mode').setMinValue(1).setMaxValue(60)).addUserOption((o) => o.setName('ignore-user').setDescription('Trusted user to ignore')).addBooleanOption((o) => o.setName('remove-ignore').setDescription('Remove ignore-user from trusted ignore list')),
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
@@ -426,7 +429,7 @@ const commands = [
 ].map((command) => command.toJSON());
 
 const trackingIntentsEnabled = process.env.ENABLE_TRACKING_INTENTS === 'true';
-const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.MessageContent];
+const clientIntents = [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.GuildMessageReactions, GatewayIntentBits.GuildModeration, GatewayIntentBits.MessageContent];
 if (trackingIntentsEnabled) clientIntents.push(GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildInvites);
 const client = new Client({ intents: clientIntents, partials: [Partials.Message, Partials.Channel, Partials.Reaction, Partials.User] });
 const rest = new REST({ version: '10' }).setToken(app.token);
@@ -488,6 +491,13 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].tracking.panel ||= {};
   guildConfigurations[guildId].themes ||= {};
   guildConfigurations[guildId].warnings ||= {};
+  guildConfigurations[guildId].antiNuke ||= { enabled: false, logChannelId: null, action: 'alert', threshold: 5, windowSeconds: 60, timeoutMinutes: 10, ignoredUsers: [] };
+  guildConfigurations[guildId].antiNuke.enabled ??= false;
+  guildConfigurations[guildId].antiNuke.action ||= 'alert';
+  guildConfigurations[guildId].antiNuke.threshold ??= 5;
+  guildConfigurations[guildId].antiNuke.windowSeconds ??= 60;
+  guildConfigurations[guildId].antiNuke.timeoutMinutes ??= 10;
+  guildConfigurations[guildId].antiNuke.ignoredUsers ||= [];
   return guildConfigurations[guildId];
 }
 
@@ -859,6 +869,79 @@ function requireLibraryStaff(interaction) {
 function requireAdministrator(interaction) {
   if (!interaction.guild || !interaction.guildId) throw new Error('This command can only be used in a server.');
   if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) throw new Error('You need Administrator permission to use this control.');
+}
+
+async function sendAntiNukeAlert(guild, config, embed) {
+  const channelId = config.logChannelId || guild.systemChannelId;
+  if (!channelId) return;
+  const channel = await guild.channels.fetch(channelId).catch(() => null);
+  if (channel?.isTextBased()) await channel.send({ embeds: [embed] }).catch(() => undefined);
+}
+
+async function fetchAuditExecutor(guild, type, targetId) {
+  const logs = await guild.fetchAuditLogs({ type, limit: 5 }).catch(() => null);
+  const entry = logs?.entries.find((item) => (!targetId || item.target?.id === targetId) && Date.now() - item.createdTimestamp < 10000);
+  return entry?.executor || null;
+}
+
+async function handleAntiNukeEvent(guild, auditType, targetLabel, targetId) {
+  const config = ensureConfiguration(guild.id).antiNuke;
+  if (!config.enabled) return;
+  const executor = await fetchAuditExecutor(guild, auditType, targetId);
+  if (!executor || executor.id === client.user.id || BOT_OWNER_IDS.has(executor.id) || config.ignoredUsers.includes(executor.id)) return;
+  const now = Date.now();
+  const windowMs = Math.max(30, Number(config.windowSeconds || 60)) * 1000;
+  const key = `${guild.id}:${executor.id}`;
+  const hits = (antiNukeHits.get(key) || []).filter((hit) => now - hit.at <= windowMs);
+  hits.push({ at: now, action: targetLabel });
+  antiNukeHits.set(key, hits);
+  if (hits.length < Number(config.threshold || 5)) return;
+  antiNukeHits.set(key, []);
+  const embed = new EmbedBuilder()
+    .setColor(0xed4245)
+    .setTitle('Anti-Nuke Alert')
+    .setDescription(`${executor} triggered **${hits.length}** destructive action(s) within **${Math.round(windowMs / 1000)}s**.`)
+    .addFields(
+      { name: 'Latest action', value: targetLabel, inline: true },
+      { name: 'Configured action', value: config.action === 'timeout' ? 'Alert + timeout' : 'Alert only', inline: true },
+    )
+    .setTimestamp();
+  if (config.action === 'timeout') {
+    const member = await guild.members.fetch(executor.id).catch(() => null);
+    const me = await guild.members.fetchMe().catch(() => null);
+    if (member?.moderatable && me?.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+      await member.timeout(Math.min(60, Number(config.timeoutMinutes || 10)) * 60 * 1000, 'Anti-nuke burst protection').catch(() => undefined);
+      embed.addFields({ name: 'Protection', value: `${executor} was timed out.`, inline: false });
+    } else {
+      embed.addFields({ name: 'Protection', value: 'Could not timeout this member. Check bot role position and Moderate Members permission.', inline: false });
+    }
+  }
+  await sendAntiNukeAlert(guild, config, embed);
+}
+
+async function handleAntiNukeCommand(interaction) {
+  requireAdministrator(interaction);
+  const config = ensureConfiguration(interaction.guildId).antiNuke;
+  const enabled = interaction.options.getBoolean('enabled');
+  const logChannel = interaction.options.getChannel('log-channel');
+  const action = interaction.options.getString('action');
+  const threshold = interaction.options.getInteger('threshold');
+  const windowSeconds = interaction.options.getInteger('window-seconds');
+  const timeoutMinutes = interaction.options.getInteger('timeout-minutes');
+  const ignoreUser = interaction.options.getUser('ignore-user');
+  const removeIgnore = interaction.options.getBoolean('remove-ignore') || false;
+  if (enabled !== null) config.enabled = enabled;
+  if (logChannel) config.logChannelId = logChannel.id;
+  if (action) config.action = action;
+  if (threshold !== null) config.threshold = threshold;
+  if (windowSeconds !== null) config.windowSeconds = windowSeconds;
+  if (timeoutMinutes !== null) config.timeoutMinutes = timeoutMinutes;
+  if (ignoreUser) {
+    config.ignoredUsers = config.ignoredUsers.filter((id) => id !== ignoreUser.id);
+    if (!removeIgnore) config.ignoredUsers.push(ignoreUser.id);
+  }
+  await saveConfigurations();
+  return replyPrivately(interaction, `Anti-nuke is **${config.enabled ? 'enabled' : 'disabled'}**.\nAction: **${config.action}**\nThreshold: **${config.threshold}** actions in **${config.windowSeconds}s**\nLog channel: ${config.logChannelId ? `<#${config.logChannelId}>` : 'server system channel'}\nIgnored users: **${config.ignoredUsers.length}**`, 'success');
 }
 
 async function handleUserBlacklistCommand(interaction) {
@@ -3257,7 +3340,15 @@ client.on('guildCreate', (guild) => {
 client.on('inviteCreate', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('inviteDelete', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('guildMemberAdd', (member) => handleMemberJoin(member).catch((error) => console.error('Join tracking failed:', error)));
-client.on('guildMemberRemove', (member) => sendMemberTracking(member, false, null).catch((error) => console.error('Leave tracking failed:', error)));
+client.on('guildMemberRemove', (member) => {
+  sendMemberTracking(member, false, null).catch((error) => console.error('Leave tracking failed:', error));
+  handleAntiNukeEvent(member.guild, AuditLogEvent.MemberKick, `Kicked ${member.user.tag}`, member.id).catch((error) => console.error('Anti-nuke kick check failed:', error));
+});
+client.on('channelDelete', (channel) => {
+  if (channel.guild) handleAntiNukeEvent(channel.guild, AuditLogEvent.ChannelDelete, `Deleted #${channel.name}`, channel.id).catch((error) => console.error('Anti-nuke channel check failed:', error));
+});
+client.on('roleDelete', (role) => handleAntiNukeEvent(role.guild, AuditLogEvent.RoleDelete, `Deleted role ${role.name}`, role.id).catch((error) => console.error('Anti-nuke role check failed:', error)));
+client.on('guildBanAdd', (ban) => handleAntiNukeEvent(ban.guild, AuditLogEvent.MemberBanAdd, `Banned ${ban.user.tag}`, ban.user.id).catch((error) => console.error('Anti-nuke ban check failed:', error)));
 client.on('messageCreate', async (message) => {
   await trackServerMessage(message);
   if (message.author.bot || !message.guild) return;
@@ -3307,6 +3398,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'request') await handleAccessRequestCommand(interaction);
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
+      else if (interaction.commandName === 'anti-nuke') await handleAntiNukeCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'commands') await handleCommandsHelp(interaction);
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
