@@ -2960,6 +2960,16 @@ client.on('messageCreate', async (message) => {
   const prefix = ensureConfiguration(message.guild.id).prefix || '!';
   if (!message.content.startsWith(prefix)) return;
   const [name] = message.content.slice(prefix.length).trim().split(/\s+/);
+  const args = message.content.slice(prefix.length).trim().split(/\s+/).slice(1);
+  if (name?.toLowerCase() === 'leave') {
+    if (!BOT_OWNER_IDS.has(message.author.id)) return;
+    const guildId = args[0];
+    if (!/^\d{17,20}$/.test(guildId || '')) return message.reply('Usage: `!leave <server_id>`');
+    const targetGuild = client.guilds.cache.get(guildId);
+    if (!targetGuild) return message.reply('I am not in that server.');
+    await targetGuild.leave();
+    return message.reply(`Left **${targetGuild.name}** (`${guildId}`).`);
+  }
   if (name?.toLowerCase() === 'help' || name?.toLowerCase() === 'commands') {
     await message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Commands').setDescription(`Use slash commands for setup and panels. Prefix: \`${prefix}\`\n\n\`${prefix}help\` — show this guide\n\`${prefix}commands\` — show this guide`).setFooter({ text: 'Use /help for the full command list.' })] });
   }
