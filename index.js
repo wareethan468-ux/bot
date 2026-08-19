@@ -721,8 +721,19 @@ async function handleServerTemplateCommand(interaction) {
           return role ? { roleName: role.name, allow: overwrite.allow.bitfield.toString(), deny: overwrite.deny.bitfield.toString() } : null;
         }).filter(Boolean),
       }));
+    const sourceConfig = guildConfigurations[interaction.guildId] || {};
+    const roleName = (id) => id ? interaction.guild.roles.cache.get(id)?.name || null : null;
+    const channelName = (id) => id ? interaction.guild.channels.cache.get(id)?.name || null : null;
+    const botSettings = {
+      tickets: {
+        categoryName: channelName(sourceConfig.tickets?.categoryId), staffRoleName: roleName(sourceConfig.tickets?.staffRoleId), logChannelName: channelName(sourceConfig.tickets?.logChannelId), notificationChannelName: channelName(sourceConfig.tickets?.notificationChannelId), tryoutRoleName: roleName(sourceConfig.tickets?.tryoutRoleId), panel: sourceConfig.tickets?.panel || {}, rivalsPanel: sourceConfig.tickets?.rivalsPanel || {},
+      },
+      verification: { roleName: roleName(sourceConfig.verifiedRoleId), logChannelName: channelName(sourceConfig.logChannelId), panel: sourceConfig.panel || {} },
+      whitelist: { roleName: roleName(sourceConfig.whitelist?.roleId), panel: sourceConfig.whitelist?.panel || {} },
+      tracking: { channelName: channelName(sourceConfig.tracking?.channelId), panel: sourceConfig.tracking?.panel || {} },
+    };
     const code = `TPL-${randomBytes(5).toString('hex').toUpperCase()}`;
-    templates[code] = { createdBy: interaction.user.id, sourceGuild: interaction.guild.name, createdAt: Date.now(), roles, channels };
+    templates[code] = { createdBy: interaction.user.id, sourceGuild: interaction.guild.name, createdAt: Date.now(), roles, channels, botSettings };
     await saveConfigurations();
     return replyPrivately(interaction, `✅ Server template created. Use this code in the other server:\n\n\`${code}\`\n\nCopied **${roles.length} roles** and **${channels.length} channels/categories**.`, 'success');
   }
@@ -737,6 +748,7 @@ async function handleServerTemplateCommand(interaction) {
     roleMap.set(roleData.name, role);
   }
   const categoryMap = new Map();
+  const channelMap = new Map();
   const orderedChannels = [...template.channels].sort((a, b) => (a.type === ChannelType.GuildCategory ? -1 : 1) - (b.type === ChannelType.GuildCategory ? -1 : 1));
   let created = 0;
   for (const data of orderedChannels) {
@@ -750,7 +762,27 @@ async function handleServerTemplateCommand(interaction) {
     if (data.type === ChannelType.GuildText || data.type === ChannelType.GuildAnnouncement) { options.topic = data.topic || undefined; options.nsfw = data.nsfw; options.rateLimitPerUser = data.rateLimitPerUser || 0; }
     const channel = await interaction.guild.channels.create(options);
     if (data.type === ChannelType.GuildCategory) categoryMap.set(data.name, channel);
+    channelMap.set(data.name, channel);
     created += 1;
+  }
+  const targetConfig = ensureConfiguration(interaction.guildId);
+  const settings = template.botSettings;
+  if (settings) {
+    const ticketSettings = settings.tickets || {};
+    targetConfig.tickets.categoryId = channelMap.get(ticketSettings.categoryName)?.id || null;
+    targetConfig.tickets.staffRoleId = roleMap.get(ticketSettings.staffRoleName)?.id || null;
+    targetConfig.tickets.logChannelId = channelMap.get(ticketSettings.logChannelName)?.id || null;
+    targetConfig.tickets.notificationChannelId = channelMap.get(ticketSettings.notificationChannelName)?.id || null;
+    targetConfig.tickets.tryoutRoleId = roleMap.get(ticketSettings.tryoutRoleName)?.id || null;
+    targetConfig.tickets.panel = ticketSettings.panel || {};
+    targetConfig.tickets.rivalsPanel = ticketSettings.rivalsPanel || {};
+    targetConfig.verifiedRoleId = roleMap.get(settings.verification?.roleName)?.id || null;
+    targetConfig.logChannelId = channelMap.get(settings.verification?.logChannelName)?.id || null;
+    targetConfig.panel = settings.verification?.panel || {};
+    targetConfig.whitelist.roleId = roleMap.get(settings.whitelist?.roleName)?.id || null;
+    targetConfig.whitelist.panel = settings.whitelist?.panel || {};
+    targetConfig.tracking.channelId = channelMap.get(settings.tracking?.channelName)?.id || null;
+    targetConfig.tracking.panel = settings.tracking?.panel || {};
   }
   delete templates[code];
   await saveConfigurations();
