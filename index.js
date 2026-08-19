@@ -2923,7 +2923,8 @@ async function registerGuildCommands(guildId) {
   // even when optional feature commands exceed that limit; all commands remain available
   // through panels and the configurable prefix interface.
   // Leave headroom for Discord-side command validation and future setup commands.
-  const registeredCommands = commands.slice(0, 80);
+  const coreNames = new Set(['help', 'commands', 'verification-setup', 'ticket-setup', 'library-panel', 'config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'library', 'config-library', 'giveaway-start', 'poll-start']);
+  const registeredCommands = commands.filter((command) => coreNames.has(command.name)).slice(0, 25);
   await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: registeredCommands.map((command) => command.toJSON ? command.toJSON() : command) });
   console.log(`Registered commands for server ${guildId}.`);
 }
