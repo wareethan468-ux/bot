@@ -1839,8 +1839,6 @@ async function createTicket(interaction, { type, details = [] }) {
   if (!interaction.guild || !interaction.guildId) throw new Error('Tickets can only be created in a server.');
   const config = ensureConfiguration(interaction.guildId);
   const tickets = config.tickets;
-  const existing = tickets.open[interaction.user.id];
-  if (existing && !existing.closed) throw new Error(`You already have an open ticket: <#${existing.channelId}>.`);
   const { botMember } = await validateTicketSetup(interaction.guild, tickets);
   await interaction.deferReply({ flags: MessageFlags.Ephemeral });
   const channel = await interaction.guild.channels.create({
@@ -1856,7 +1854,7 @@ async function createTicket(interaction, { type, details = [] }) {
     ],
   });
   const ticket = { channelId: channel.id, ownerId: interaction.user.id, ownerMention: `${interaction.user}`, type, createdAt: Date.now(), closed: false };
-  tickets.open[interaction.user.id] = ticket;
+  tickets.open[channel.id] = ticket;
   await saveConfigurations();
   await channel.send({ content: `${interaction.user} <@&${tickets.staffRoleId}>`, embeds: [ticketWelcomeEmbed(ticket)], components: ticketCloseComponents() });
   await channel.send(ticket.type === CU_TRYOUT_TICKET_TYPE ? tryoutControlPanel() : ticketControlPanel());
