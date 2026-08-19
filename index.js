@@ -52,6 +52,7 @@ const REQUEST_DENY_PREFIX = 'access:deny:';
 const LIBRARY_PAGE_PREFIX = 'library:page:';
 const LIBRARY_PANEL_PREFIX = 'library:panel:';
 const LIBRARY_STAFF_PREFIX = 'library:staff:';
+const LIBRARY_GET_PREFIX = 'library:get:';
 const LIBRARY_STAFF_ADD_MODAL_ID = 'library:staff-add-modal';
 const LIBRARY_STAFF_BULK_MODAL_ID = 'library:staff-bulk-modal';
 const LIBRARY_STAFF_REMOVE_MODAL_ID = 'library:staff-remove-modal';
@@ -2622,7 +2623,25 @@ async function handleLibraryCommand(interaction) {
 async function handleLibraryPanelButton(interaction) {
   const tier = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  return interaction.reply({ embeds: [new EmbedBuilder().setColor(tier === 'buyer' ? 0xf1c40f : 0x57f287).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Configs`).setDescription(entries.length ? entries.map((entry) => `**${entry.name}**${tier === 'buyer' ? ` — ${economyLabel(interaction.guildId, entry.price || 0)}` : ''}`).join('\n') : 'No entries available.')], flags: MessageFlags.Ephemeral });
+  const buttons = entries.slice(0, 5).map((entry, index) => new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}`).setLabel(entry.name.slice(0, 80)).setStyle(tier === 'buyer' ? ButtonStyle.Success : ButtonStyle.Primary));
+  return interaction.reply({ embeds: [new EmbedBuilder().setColor(tier === 'buyer' ? 0xf1c40f : 0x57f287).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Configs`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**${tier === 'buyer' ? ` — ${economyLabel(interaction.guildId, entry.price || 0)}` : ''}\n${entry.description || 'Click a button below to receive it by DM.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: buttons.length ? [new ActionRowBuilder().addComponents(buttons)] : [], flags: MessageFlags.Ephemeral });
+}
+
+async function handleLibraryEntryButton(interaction) {
+  const [tier, indexText] = interaction.customId.slice(LIBRARY_GET_PREFIX.length).split(':');
+  const index = Number(indexText);
+  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
+  const entry = entries[index];
+  if (!entry) throw new Error('That library entry is no longer available.');
+  if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
+    const price = Number(entry.price || 0);
+    const balance = economyBalance(interaction.guildId, interaction.user.id);
+    if (balance < price) throw new Error(`You need **${economyLabel(interaction.guildId, price)}** to purchase this config.`);
+    economyFor(interaction.guildId).balances[interaction.user.id] = balance - price;
+    await saveConfigurations();
+  }
+  await sendLibraryEntryDM(interaction, entry);
+  return replyPrivately(interaction, `**${entry.name}** was sent to your DMs.`, 'success');
 }
 
 async function handleLibraryStaffButton(interaction) {
@@ -2950,6 +2969,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(POLL_VOTE_PREFIX)) await handlePollVote(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PAGE_PREFIX)) await handleLibraryPageButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_GET_PREFIX)) await handleLibraryEntryButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
     if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID))) await handleLibraryStaffModal(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
