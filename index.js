@@ -2653,9 +2653,16 @@ async function handleLibraryCommand(interaction) {
 
 async function handleLibraryPanelButton(interaction) {
   const tier = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
+  if (tier.startsWith('mobile:') || tier.startsWith('copy:')) {
+    const [mode, selectedTier] = tier.split(':');
+    const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => selectedTier === 'both' || (entry.tier || 'free') === selectedTier);
+    const text = entries.map((entry) => `${entry.name} — ${entry.description || 'No description'}`).join('\n');
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(mode === 'mobile' ? '📱 Mobile Config View' : '📋 Copyable Config List').setDescription(text || 'No entries available.')], flags: MessageFlags.Ephemeral });
+  }
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   const buttons = entries.slice(0, 5).map((entry, index) => new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}`).setLabel(entry.name.slice(0, 80)).setStyle(tier === 'buyer' ? ButtonStyle.Success : ButtonStyle.Primary));
-  return interaction.reply({ embeds: [new EmbedBuilder().setColor(tier === 'buyer' ? 0xf1c40f : 0x57f287).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Configs`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**${tier === 'buyer' ? ` — ${economyLabel(interaction.guildId, entry.price || 0)}` : ''}\n${entry.description || 'Click a button below to receive it by DM.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: buttons.length ? [new ActionRowBuilder().addComponents(buttons)] : [], flags: MessageFlags.Ephemeral });
+  const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
+  return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Config Gallery`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**\n${entry.description || 'Use a button below to receive it privately.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: [new ActionRowBuilder().addComponents(buttons), new ActionRowBuilder().addComponents(utilityButtons)], flags: MessageFlags.Ephemeral });
 }
 
 async function handleLibraryEntryButton(interaction) {
