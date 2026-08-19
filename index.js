@@ -110,6 +110,8 @@ const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.'),
   new SlashCommandBuilder().setName('server-copy').setDescription('Administrator: create a reusable server template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder().setName('server-paste').setDescription('Administrator: recreate a copied server template here.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code from /server-copy').setRequired(true).setMaxLength(30)),
+  new SlashCommandBuilder().setName('server-config-copy').setDescription('Administrator: copy ticket and bot configuration into a template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName('server-config-paste').setDescription('Administrator: paste ticket and bot configuration from a template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('balance').setDescription('Check your CU coin balance.').addUserOption((o) => o.setName('user').setDescription('Optional member to check')),
   new SlashCommandBuilder().setName('daily').setDescription('Claim your daily CU coins.'),
   new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on heads or tails.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addStringOption((o) => o.setName('side').setDescription('Your pick').setRequired(true).addChoices({ name: 'Heads', value: 'heads' }, { name: 'Tails', value: 'tails' })),
@@ -699,7 +701,7 @@ function serverTemplateStore() {
 async function handleServerTemplateCommand(interaction) {
   requireAdministrator(interaction);
   const templates = serverTemplateStore();
-  if (interaction.commandName === 'server-copy') {
+  if (interaction.commandName === 'server-copy' || interaction.commandName === 'server-config-copy') {
     const roles = [...interaction.guild.roles.cache.values()]
       .filter((role) => role.id !== interaction.guild.id && !role.managed)
       .sort((a, b) => a.position - b.position)
@@ -2518,7 +2520,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'poll-end') await handlePollEnd(interaction);
       else if (interaction.commandName === 'poll-voters' || interaction.commandName === 'poll-vote-remove') await handlePollAdminCommand(interaction);
       else if (['user-blacklist-add', 'user-blacklist-remove', 'user-blacklist-list'].includes(interaction.commandName)) await handleUserBlacklistCommand(interaction);
-      else if (interaction.commandName === 'server-copy' || interaction.commandName === 'server-paste') await handleServerTemplateCommand(interaction);
+      else if (['server-copy', 'server-paste', 'server-config-copy', 'server-config-paste'].includes(interaction.commandName)) await handleServerTemplateCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
