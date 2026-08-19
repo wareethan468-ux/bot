@@ -108,6 +108,8 @@ const legacyModerationCommands = [
 const legacyModerationCommandNames = new Set(legacyModerationCommands.map((command) => command.name));
 const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.'),
+  new SlashCommandBuilder().setName('server-copy').setDescription('Administrator: create a reusable server template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
+  new SlashCommandBuilder().setName('server-paste').setDescription('Administrator: recreate a copied server template here.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code from /server-copy').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('balance').setDescription('Check your CU coin balance.').addUserOption((o) => o.setName('user').setDescription('Optional member to check')),
   new SlashCommandBuilder().setName('daily').setDescription('Claim your daily CU coins.'),
   new SlashCommandBuilder().setName('coinflip').setDescription('Bet coins on heads or tails.').addIntegerOption((o) => o.setName('amount').setDescription('Coins to bet').setRequired(true).setMinValue(1).setMaxValue(1000000)).addStringOption((o) => o.setName('side').setDescription('Your pick').setRequired(true).addChoices({ name: 'Heads', value: 'heads' }, { name: 'Tails', value: 'tails' })),
@@ -391,6 +393,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].giveaways ||= [];
   guildConfigurations[guildId].polls ||= [];
   guildConfigurations[guildId].userBlacklist ||= {};
+  guildConfigurations[guildId].serverTemplates ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
   guildConfigurations[guildId].economy.balances ||= {};
   guildConfigurations[guildId].economy.daily ||= {};
@@ -686,6 +689,72 @@ async function handleUserBlacklistCommand(interaction) {
   delete config.userBlacklist[userId];
   await saveConfigurations();
   return replyPrivately(interaction, `Removed \`${userId}\` from this server’s blacklist.`, 'success');
+}
+
+function serverTemplateStore() {
+  guildConfigurations.__serverTemplates ||= {};
+  return guildConfigurations.__serverTemplates;
+}
+
+async function handleServerTemplateCommand(interaction) {
+  requireAdministrator(interaction);
+  const templates = serverTemplateStore();
+  if (interaction.commandName === 'server-copy') {
+    const roles = [...interaction.guild.roles.cache.values()]
+      .filter((role) => role.id !== interaction.guild.id && !role.managed)
+      .sort((a, b) => a.position - b.position)
+      .slice(0, 250)
+      .map((role) => ({ name: role.name, color: role.hexColor, hoist: role.hoist, mentionable: role.mentionable, permissions: role.permissions.bitfield.toString() }));
+    const channels = [...interaction.guild.channels.cache.values()]
+      .filter((channel) => [ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice].includes(channel.type))
+      .sort((a, b) => a.rawPosition - b.rawPosition)
+      .slice(0, 500)
+      .map((channel) => ({
+        name: channel.name,
+        type: channel.type,
+        parentName: channel.parent?.name || null,
+        topic: 'topic' in channel ? channel.topic : null,
+        nsfw: 'nsfw' in channel ? channel.nsfw : false,
+        rateLimitPerUser: 'rateLimitPerUser' in channel ? channel.rateLimitPerUser : 0,
+        permissionOverwrites: [...channel.permissionOverwrites.cache.values()].map((overwrite) => {
+          const role = overwrite.type === 0 ? interaction.guild.roles.cache.get(overwrite.id) : null;
+          return role ? { roleName: role.name, allow: overwrite.allow.bitfield.toString(), deny: overwrite.deny.bitfield.toString() } : null;
+        }).filter(Boolean),
+      }));
+    const code = `TPL-${randomBytes(5).toString('hex').toUpperCase()}`;
+    templates[code] = { createdBy: interaction.user.id, sourceGuild: interaction.guild.name, createdAt: Date.now(), roles, channels };
+    await saveConfigurations();
+    return replyPrivately(interaction, `✅ Server template created. Use this code in the other server:\n\n\`${code}\`\n\nCopied **${roles.length} roles** and **${channels.length} channels/categories**.`, 'success');
+  }
+  const code = interaction.options.getString('code', true).trim().toUpperCase();
+  const template = templates[code];
+  if (!template) throw new Error('That server template code is invalid or expired.');
+  const botMember = await interaction.guild.members.fetchMe();
+  if (!botMember.permissions.has(PermissionFlagsBits.ManageRoles) || !botMember.permissions.has(PermissionFlagsBits.ManageChannels)) throw new Error('I need Manage Roles and Manage Channels permissions to paste a server template.');
+  const roleMap = new Map();
+  for (const roleData of template.roles) {
+    const role = await interaction.guild.roles.create({ name: roleData.name, color: roleData.color, hoist: roleData.hoist, mentionable: roleData.mentionable, permissions: BigInt(roleData.permissions), reason: `Server template ${code}` });
+    roleMap.set(roleData.name, role);
+  }
+  const categoryMap = new Map();
+  const orderedChannels = [...template.channels].sort((a, b) => (a.type === ChannelType.GuildCategory ? -1 : 1) - (b.type === ChannelType.GuildCategory ? -1 : 1));
+  let created = 0;
+  for (const data of orderedChannels) {
+    const permissionOverwrites = data.permissionOverwrites.map((overwrite) => {
+      const role = roleMap.get(overwrite.roleName);
+      if (!role) return null;
+      return { id: role.id, allow: BigInt(overwrite.allow), deny: BigInt(overwrite.deny) };
+    }).filter(Boolean);
+    const options = { name: data.name, type: data.type, reason: `Server template ${code}`, permissionOverwrites };
+    if (data.type !== ChannelType.GuildCategory && data.parentName) options.parent = categoryMap.get(data.parentName)?.id;
+    if (data.type === ChannelType.GuildText || data.type === ChannelType.GuildAnnouncement) { options.topic = data.topic || undefined; options.nsfw = data.nsfw; options.rateLimitPerUser = data.rateLimitPerUser || 0; }
+    const channel = await interaction.guild.channels.create(options);
+    if (data.type === ChannelType.GuildCategory) categoryMap.set(data.name, channel);
+    created += 1;
+  }
+  delete templates[code];
+  await saveConfigurations();
+  return replyPrivately(interaction, `✅ Template pasted successfully. Created **${roleMap.size} roles** and **${created} channels/categories**. The code is now consumed.`, 'success');
 }
 
 async function handleChannelAccessCommand(interaction) {
@@ -2417,6 +2486,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'poll-end') await handlePollEnd(interaction);
       else if (interaction.commandName === 'poll-voters' || interaction.commandName === 'poll-vote-remove') await handlePollAdminCommand(interaction);
       else if (['user-blacklist-add', 'user-blacklist-remove', 'user-blacklist-list'].includes(interaction.commandName)) await handleUserBlacklistCommand(interaction);
+      else if (interaction.commandName === 'server-copy' || interaction.commandName === 'server-paste') await handleServerTemplateCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
