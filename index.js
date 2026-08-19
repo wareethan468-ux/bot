@@ -57,6 +57,7 @@ const LIBRARY_GET_PREFIX = 'library:get:';
 const LIBRARY_STAFF_ADD_MODAL_ID = 'library:staff-add-modal';
 const LIBRARY_STAFF_BULK_MODAL_ID = 'library:staff-bulk-modal';
 const LIBRARY_STAFF_REMOVE_MODAL_ID = 'library:staff-remove-modal';
+const LIBRARY_STAFF_EDIT_MODAL_ID = 'library:staff-edit-modal';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -2702,7 +2703,7 @@ async function handleLibraryStaffButton(interaction) {
   if (action === 'add') return replyPrivately(interaction, `📦 **Add a ${tier} library entry**\n\nUse the embed-based command setup:\n\`/config-library-add name:<name> tier:${tier} text:<text>\`\n\nUpload files directly in the command using \`file1\` through \`file10\`. Files are delivered when the entry is viewed or sent by DM.`, 'info');
   if (action === 'bulk') return replyPrivately(interaction, '📚 **Bulk library setup**\n\nUse `/config-library-add` for each entry. Upload up to 10 files per entry using file1-file10; large configs should be uploaded as files instead of pasted into chat.', 'info');
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  if (action === 'edit') return replyPrivately(interaction, '✏️ Use `/config-library-edit name:<existing-name>` to edit an entry. Add `file1` through `file10` to replace its uploaded files.', 'info');
+  if (action === 'edit') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_EDIT_MODAL_ID}:${tier}`).setTitle('Edit Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Existing entry name').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new-name').setLabel('New name (optional)').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Paragraph)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Text/config (optional)').setStyle(TextInputStyle.Paragraph))));
   if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
   if (action === 'stats') return replyPrivately(interaction, `📈 **${tier} library stats**\nEntries: **${entries.length}**\nFiles: **${entries.reduce((sum, entry) => sum + entry.files.length, 0)}**\nText entries: **${entries.filter((entry) => entry.text).length}**`, 'info');
   if (action === 'export') return replyPrivately(interaction, entries.length ? `📤 **${tier} export list**\n\n${entries.map((entry) => `\`${entry.name}\` • ${entry.price || 0} coins • ${entry.files.length} file(s)`).join('\n')}` : 'Nothing to export.', 'info');
@@ -2717,6 +2718,20 @@ async function handleLibraryStaffModal(interaction) {
   const parts = interaction.customId.split(':');
   const tier = parts[parts.length - 1];
   const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.customId.startsWith(LIBRARY_STAFF_EDIT_MODAL_ID)) {
+    const name = interaction.fields.getTextInputValue('name').trim();
+    const entry = library.entries.find((item) => item.name.toLowerCase() === name.toLowerCase());
+    if (!entry) throw new Error('That library entry was not found.');
+    const newName = interaction.fields.getTextInputValue('new-name').trim();
+    const description = interaction.fields.getTextInputValue('description').trim();
+    const text = interaction.fields.getTextInputValue('text').trim();
+    if (newName) entry.name = newName;
+    if (description) entry.description = description;
+    if (text) entry.text = text;
+    entry.updatedAt = Date.now();
+    await saveConfigurations();
+    return replyPrivately(interaction, `Updated **${entry.name}** from the staff panel.`, 'success');
+  }
   if (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID)) {
     const name = interaction.fields.getTextInputValue('name').trim();
     const price = Number(interaction.fields.getTextInputValue('price') || 0);
@@ -3073,7 +3088,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_GET_PREFIX)) await handleLibraryEntryButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
-    if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID))) await handleLibraryStaffModal(interaction);
+    if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_EDIT_MODAL_ID))) await handleLibraryStaffModal(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX) || interaction.customId.startsWith(REQUEST_LEAVE_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
