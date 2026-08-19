@@ -2673,7 +2673,11 @@ async function handleLibraryEntryButton(interaction) {
   if (!entry) throw new Error('That library entry is no longer available.');
   if (action === 'copy') {
     const content = [entry.text || '', ...(entry.files || []).map((file) => file.url)].filter(Boolean).join('\n\n');
-    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], flags: MessageFlags.Ephemeral });
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:mobile`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary))], flags: MessageFlags.Ephemeral });
+  }
+  if (action === 'mobile') {
+    const content = entry.text || 'This config is file-only. Use Send to DM for attachments.';
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`📱 ${entry.name} — Mobile View`).setDescription(content.slice(0, 3900))], flags: MessageFlags.Ephemeral });
   }
   const library = ensureConfiguration(interaction.guildId).library;
   if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
