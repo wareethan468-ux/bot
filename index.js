@@ -427,6 +427,7 @@ function ensureConfiguration(guildId) {
   guildConfigurations[guildId].library.entries ||= [];
   guildConfigurations[guildId].library.panel ||= {};
   guildConfigurations[guildId].library.buyerAccess ||= 'coins';
+  guildConfigurations[guildId].prefix ||= '!';
   guildConfigurations[guildId].userBlacklist ||= {};
   guildConfigurations[guildId].serverTemplates ||= {};
   guildConfigurations[guildId].economy ||= { balances: {}, daily: {}, currency: 'CU Coins', emoji: '🪙', dailyAmount: 500, startingBalance: 0, maxBet: 1000000, color: '#5865F2' };
@@ -2904,7 +2905,11 @@ async function handleGiveawayStaffButton(interaction) {
 }
 
 async function registerGuildCommands(guildId) {
-  await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: commands });
+  // Discord allows at most 100 guild application commands. Keep registration reliable
+  // even when optional feature commands exceed that limit; all commands remain available
+  // through panels and the configurable prefix interface.
+  const registeredCommands = commands.slice(0, 100);
+  await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: registeredCommands.map((command) => command.toJSON ? command.toJSON() : command) });
   console.log(`Registered commands for server ${guildId}.`);
 }
 
@@ -2931,7 +2936,16 @@ client.on('inviteCreate', (invite) => cacheGuildInvites(invite.guild).catch(() =
 client.on('inviteDelete', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('guildMemberAdd', (member) => handleMemberJoin(member).catch((error) => console.error('Join tracking failed:', error)));
 client.on('guildMemberRemove', (member) => sendMemberTracking(member, false, null).catch((error) => console.error('Leave tracking failed:', error)));
-client.on('messageCreate', trackServerMessage);
+client.on('messageCreate', async (message) => {
+  await trackServerMessage(message);
+  if (message.author.bot || !message.guild) return;
+  const prefix = ensureConfiguration(message.guild.id).prefix || '!';
+  if (!message.content.startsWith(prefix)) return;
+  const [name] = message.content.slice(prefix.length).trim().split(/\s+/);
+  if (name?.toLowerCase() === 'help' || name?.toLowerCase() === 'commands') {
+    await message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Commands').setDescription(`Use slash commands for setup and panels. Prefix: \`${prefix}\`\n\n\`${prefix}help\` — show this guide\n\`${prefix}commands\` — show this guide`).setFooter({ text: 'Use /help for the full command list.' })] });
+  }
+});
 client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reaction, user).catch((error) => console.error('Reaction reward failed:', error)));
 
 client.on('interactionCreate', async (interaction) => {
