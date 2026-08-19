@@ -48,6 +48,7 @@ const GLOBAL_BOT_BLACKLIST = new Set(['1324049089314426924', '152116355978087630
 const BOT_OWNER_IDS = new Set(['1504236410440253600', '1244476245249626133']);
 const OWNER_ONLY_SERVER_IDS = new Set(['1538272402037809303']);
 const REQUEST_APPROVE_PREFIX = 'access:approve:';
+const REQUEST_LEAVE_PREFIX = 'access:leave:';
 const REQUEST_DENY_PREFIX = 'access:deny:';
 const LIBRARY_PAGE_PREFIX = 'library:page:';
 const LIBRARY_PANEL_PREFIX = 'library:panel:';
@@ -753,6 +754,7 @@ function accessRequestButtons(requestId) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${REQUEST_APPROVE_PREFIX}${requestId}`).setLabel('Approve').setEmoji('✅').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`${REQUEST_DENY_PREFIX}${requestId}`).setLabel('Deny').setEmoji('❌').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`${REQUEST_LEAVE_PREFIX}${requestId}`).setLabel('Leave Server').setEmoji('🚪').setStyle(ButtonStyle.Secondary),
   );
 }
 
@@ -829,12 +831,21 @@ async function handleCommandsHelp(interaction) {
 
 async function handleApprovalButton(interaction) {
   if (!BOT_OWNER_IDS.has(interaction.user.id)) throw new Error('Only the configured bot owners can approve or deny requests.');
+  const leaving = interaction.customId.startsWith(REQUEST_LEAVE_PREFIX);
   const approved = interaction.customId.startsWith(REQUEST_APPROVE_PREFIX);
-  const prefix = approved ? REQUEST_APPROVE_PREFIX : REQUEST_DENY_PREFIX;
+  const prefix = leaving ? REQUEST_LEAVE_PREFIX : approved ? REQUEST_APPROVE_PREFIX : REQUEST_DENY_PREFIX;
   const requestId = interaction.customId.slice(prefix.length);
   const store = accessControlStore();
   const request = store.requests[requestId];
   if (!request) throw new Error('This approval request has expired.');
+  if (leaving) {
+    const guild = client.guilds.cache.get(request.targetId);
+    if (!guild) throw new Error('I am no longer in that server.');
+    await guild.leave();
+    delete store.requests[requestId];
+    await saveConfigurations();
+    return interaction.update({ embeds: [responseEmbed(`Left server `${request.targetId}`.`, 'info')], components: [] });
+  }
   if (approved) {
     const list = request.type === 'user' ? store.approvedUsers : store.approvedServers;
     list[request.targetId] = { approvedBy: interaction.user.id, approvedAt: Date.now() };
@@ -3045,7 +3056,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_GET_PREFIX)) await handleLibraryEntryButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
     if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID))) await handleLibraryStaffModal(interaction);
-    if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
+    if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX) || interaction.customId.startsWith(REQUEST_LEAVE_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
