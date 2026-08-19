@@ -44,6 +44,10 @@ const GIVEAWAY_REFRESH_BUTTON_PREFIX = 'giveaway:refresh:';
 const GIVEAWAY_PARTICIPANTS_PREFIX = 'giveaway:participants:';
 const POLL_VOTE_PREFIX = 'poll:vote:';
 const GLOBAL_BOT_BLACKLIST = new Set(['1324049089314426924', '1521163559780876309']);
+const BOT_OWNER_IDS = new Set(['1504236410440253600', '1244476245249626133']);
+const OWNER_ONLY_SERVER_IDS = new Set(['1538272402037809303']);
+const REQUEST_APPROVE_PREFIX = 'access:approve:';
+const REQUEST_DENY_PREFIX = 'access:deny:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -366,6 +370,8 @@ const commands = [
     .addChannelOption((option) => option.setName('channel').setDescription('Channel or category').addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
   new SlashCommandBuilder().setName('maintenance-lock').setDescription('Administrator: lock a category to one maintenance role.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to lock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)).addRoleOption((o) => o.setName('role').setDescription('Only this role can see the category').setRequired(true)),
   new SlashCommandBuilder().setName('maintenance-unlock').setDescription('Administrator: remove maintenance visibility restrictions.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to unlock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)),
+  new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
+  new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
@@ -699,6 +705,79 @@ async function handleUserBlacklistCommand(interaction) {
 function serverTemplateStore() {
   guildConfigurations.__serverTemplates ||= {};
   return guildConfigurations.__serverTemplates;
+}
+
+function accessControlStore() {
+  guildConfigurations.__accessControl ||= { userBlacklist: {}, serverBlacklist: {}, approvedUsers: {}, approvedServers: {}, requests: {} };
+  const store = guildConfigurations.__accessControl;
+  store.userBlacklist ||= {};
+  store.serverBlacklist ||= {};
+  store.approvedUsers ||= {};
+  store.approvedServers ||= {};
+  store.requests ||= {};
+  return store;
+}
+
+function requireBotOwner(interaction) {
+  if (!BOT_OWNER_IDS.has(interaction.user.id)) throw new Error('Only the configured bot owners can use this command.');
+}
+
+function accessRequestButtons(requestId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`${REQUEST_APPROVE_PREFIX}${requestId}`).setLabel('Approve').setEmoji('✅').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`${REQUEST_DENY_PREFIX}${requestId}`).setLabel('Deny').setEmoji('❌').setStyle(ButtonStyle.Danger),
+  );
+}
+
+async function sendApprovalRequest(request) {
+  const store = accessControlStore();
+  store.requests[request.id] = request;
+  await saveConfigurations();
+  const embed = new EmbedBuilder().setColor(0xfee75c).setTitle('Bot Approval Request').setDescription(`A request was submitted by <@${request.requesterId}>.`).addFields({ name: 'Type', value: request.type, inline: true }, { name: 'Target ID', value: `\`${request.targetId}\``, inline: true }, { name: 'Reason', value: request.reason || 'No reason provided' }).setTimestamp();
+  for (const ownerId of BOT_OWNER_IDS) {
+    const owner = await client.users.fetch(ownerId).catch(() => null);
+    if (owner) await owner.send({ embeds: [embed], components: [accessRequestButtons(request.id)] }).catch(() => undefined);
+  }
+}
+
+async function handleAccessRequestCommand(interaction) {
+  const type = interaction.options.getString('type', true);
+  const targetId = interaction.options.getString('target-id', true).trim();
+  if (!/^\d{17,20}$/.test(targetId)) throw new Error('Target ID must be a valid Discord ID.');
+  const request = { id: randomBytes(5).toString('hex'), type, targetId, reason: interaction.options.getString('reason') || 'No reason provided', requesterId: interaction.user.id, createdAt: Date.now() };
+  await sendApprovalRequest(request);
+  return replyPrivately(interaction, 'Your request was sent successfully to the bot owners.', 'success');
+}
+
+async function handleGlobalBlacklistCommand(interaction) {
+  requireBotOwner(interaction);
+  const type = interaction.options.getString('type', true);
+  const targetId = interaction.options.getString('target-id', true).trim();
+  const action = interaction.options.getString('action', true);
+  if (!/^\d{17,20}$/.test(targetId)) throw new Error('Target ID must be a valid Discord ID.');
+  const store = accessControlStore();
+  const list = type === 'user' ? store.userBlacklist : store.serverBlacklist;
+  if (action === 'add') list[targetId] = { addedBy: interaction.user.id, addedAt: Date.now() };
+  else delete list[targetId];
+  await saveConfigurations();
+  return replyPrivately(interaction, `${type === 'user' ? 'User' : 'Server'} ID \`${targetId}\` was ${action === 'add' ? 'added to' : 'removed from'} the global blacklist.`, 'success');
+}
+
+async function handleApprovalButton(interaction) {
+  if (!BOT_OWNER_IDS.has(interaction.user.id)) throw new Error('Only the configured bot owners can approve or deny requests.');
+  const approved = interaction.customId.startsWith(REQUEST_APPROVE_PREFIX);
+  const prefix = approved ? REQUEST_APPROVE_PREFIX : REQUEST_DENY_PREFIX;
+  const requestId = interaction.customId.slice(prefix.length);
+  const store = accessControlStore();
+  const request = store.requests[requestId];
+  if (!request) throw new Error('This approval request has expired.');
+  if (approved) {
+    const list = request.type === 'user' ? store.approvedUsers : store.approvedServers;
+    list[request.targetId] = { approvedBy: interaction.user.id, approvedAt: Date.now() };
+  }
+  delete store.requests[requestId];
+  await saveConfigurations();
+  await interaction.update({ embeds: [responseEmbed(`${request.type === 'user' ? 'User' : 'Server'} ID \`${request.targetId}\` was ${approved ? 'approved' : 'denied'}.`, approved ? 'success' : 'info')], components: [] });
 }
 
 async function handleServerTemplateCommand(interaction) {
@@ -2517,7 +2596,10 @@ client.once('clientReady', async (readyClient) => {
     }
   }
 });
-client.on('guildCreate', (guild) => registerGuildCommands(guild.id).catch((error) => console.error('Command registration failed:', error)));
+client.on('guildCreate', (guild) => {
+  registerGuildCommands(guild.id).catch((error) => console.error('Command registration failed:', error));
+  sendApprovalRequest({ id: randomBytes(5).toString('hex'), type: 'server', targetId: guild.id, reason: `Bot joined ${guild.name}; owner approval requested.`, requesterId: guild.ownerId, createdAt: Date.now() }).catch((error) => console.error('Could not send server approval request:', error));
+});
 client.on('inviteCreate', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('inviteDelete', (invite) => cacheGuildInvites(invite.guild).catch(() => undefined));
 client.on('guildMemberAdd', (member) => handleMemberJoin(member).catch((error) => console.error('Join tracking failed:', error)));
@@ -2526,7 +2608,8 @@ client.on('messageCreate', trackServerMessage);
 
 client.on('interactionCreate', async (interaction) => {
   try {
-    if (GLOBAL_BOT_BLACKLIST.has(interaction.user.id)) return replyPrivately(interaction, 'You are blocked from using this bot.', 'error');
+    const access = accessControlStore();
+    if (!BOT_OWNER_IDS.has(interaction.user.id) && (GLOBAL_BOT_BLACKLIST.has(interaction.user.id) || access.userBlacklist[interaction.user.id] || (interaction.guildId && (access.serverBlacklist[interaction.guildId] || OWNER_ONLY_SERVER_IDS.has(interaction.guildId))))) return replyPrivately(interaction, 'You are blocked from using this bot in this server.', 'error');
     const serverBlacklist = interaction.guildId ? configuration(interaction.guildId)?.userBlacklist || {} : {};
     if (serverBlacklist[interaction.user.id] && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       return replyPrivately(interaction, 'You are blacklisted from using this bot in this server.', 'error');
@@ -2547,6 +2630,8 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'poll-voters' || interaction.commandName === 'poll-vote-remove') await handlePollAdminCommand(interaction);
       else if (['user-blacklist-add', 'user-blacklist-remove', 'user-blacklist-list'].includes(interaction.commandName)) await handleUserBlacklistCommand(interaction);
       else if (['server-copy', 'server-paste', 'server-config-copy', 'server-config-paste'].includes(interaction.commandName)) await handleServerTemplateCommand(interaction);
+      else if (interaction.commandName === 'request') await handleAccessRequestCommand(interaction);
+      else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
@@ -2578,6 +2663,7 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(GIVEAWAY_BUTTON_PREFIX)) await handleGiveawayEntry(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX))) await handleGiveawayStaffButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(POLL_VOTE_PREFIX)) await handlePollVote(interaction);
+    if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
     if (interaction.isButton() && interaction.customId === TICKET_CLOSE_BUTTON_ID) await handleTicketClose(interaction);
