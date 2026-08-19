@@ -7,6 +7,7 @@ import {
 import { commandGroups } from './commands/groups.js';
 
 import { randomBytes } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -2467,6 +2468,20 @@ client.on('interactionCreate', async (interaction) => {
 async function start() {
   await loadConfigurations();
   await client.login(app.token);
+  if (process.env.DISCORD_TOKEN_2?.trim() && !process.env.BOT_SLOT) {
+    if (!process.env.CLIENT_ID_2?.trim()) throw new Error('CLIENT_ID_2 is required when DISCORD_TOKEN_2 is configured.');
+    const childEnv = {
+      ...process.env,
+      DISCORD_TOKEN: process.env.DISCORD_TOKEN_2,
+      CLIENT_ID: process.env.CLIENT_ID_2,
+      DISCORD_TOKEN_2: '',
+      CLIENT_ID_2: '',
+      BOT_SLOT: '2',
+    };
+    const secondary = spawn(process.execPath, [process.argv[1]], { env: childEnv, stdio: 'inherit' });
+    secondary.on('exit', (code) => console.error(`Secondary bot process exited with code ${code}.`));
+    console.log('Secondary bot process started.');
+  }
 }
 start().catch((error) => {
   console.error('Bot failed to start:', error);
