@@ -50,6 +50,8 @@ const OWNER_ONLY_SERVER_IDS = new Set(['1538272402037809303']);
 const REQUEST_APPROVE_PREFIX = 'access:approve:';
 const REQUEST_DENY_PREFIX = 'access:deny:';
 const LIBRARY_PAGE_PREFIX = 'library:page:';
+const LIBRARY_PANEL_PREFIX = 'library:panel:';
+const LIBRARY_STAFF_PREFIX = 'library:staff:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -378,7 +380,8 @@ const commands = [
   new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)),
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
-  new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)),
+  new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)),
+  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: post a Free or Buyer library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)),
   new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)),
   new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)),
   new SlashCommandBuilder().setName('library').setDescription('Browse the configuration library.').addIntegerOption((o) => o.setName('page').setDescription('Page number').setMinValue(1)).addStringOption((o) => o.setName('get').setDescription('Entry name to DM').setMaxLength(80)),
@@ -2563,13 +2566,18 @@ function libraryPagePayload(guildId, page) {
   const current = Math.min(Math.max(page, 1), pages);
   const entries = library.entries.slice((current - 1) * size, current * size);
   const panel = library.panel;
-  const description = entries.length ? entries.map((entry, index) => `**${(current - 1) * size + index + 1}. ${entry.name}** — ${entry.description || 'No description'}\nFiles: **${entry.files.length}**${entry.text ? ' • Text included' : ''}`).join('\n\n') : 'The library is empty.';
+  const description = entries.length ? entries.map((entry, index) => `**${(current - 1) * size + index + 1}. ${entry.name}** — ${entry.description || 'No description'}\nTier: **${entry.tier || 'free'}**${entry.tier === 'buyer' ? ` • Price: **${economyLabel(guildId, entry.price || 0)}**` : ''}\nFiles: **${entry.files.length}**${entry.text ? ' • Text included' : ''}`).join('\n\n') : 'The library is empty.';
   const embed = new EmbedBuilder().setColor(parseColor(panel.color, 0x5865f2)).setTitle(panel.title || 'Configuration Library').setDescription(panel.description ? `${panel.description}\n\n${description}` : description).setFooter({ text: `${panel.footer || 'Use the get option to receive an entry by DM.'} • Page ${current}/${pages}` }).setTimestamp();
   const components = [new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`${LIBRARY_PAGE_PREFIX}${guildId}:${current - 1}`).setLabel('Previous').setStyle(ButtonStyle.Secondary).setDisabled(current <= 1),
     new ButtonBuilder().setCustomId(`${LIBRARY_PAGE_PREFIX}${guildId}:${current + 1}`).setLabel('Next').setStyle(ButtonStyle.Primary).setDisabled(current >= pages),
   )];
   return { embeds: [embed], components };
+}
+
+function libraryPanelPayload(tier, options = {}) {
+  const buyer = tier === 'buyer';
+  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the button below to browse entries.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}${tier}`).setLabel('Staff Controls').setEmoji('🛠️').setStyle(ButtonStyle.Secondary))] };
 }
 
 async function sendLibraryEntryDM(interaction, entry) {
@@ -2588,22 +2596,53 @@ async function handleLibraryCommand(interaction) {
   if (requested) {
     const entry = library.entries.find((item) => item.name.toLowerCase() === requested.toLowerCase());
     if (!entry) throw new Error('That library entry was not found.');
+    if (entry.tier === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id)) {
+      const price = Number(entry.price || 0);
+      const balance = economyBalance(interaction.guildId, interaction.user.id);
+      if (balance < price) throw new Error(`You need **${economyLabel(interaction.guildId, price)}** to purchase this config. Your balance: **${economyLabel(interaction.guildId, balance)}**.`);
+      const economy = economyFor(interaction.guildId);
+      economy.balances[interaction.user.id] = balance - price;
+      await saveConfigurations();
+    }
     await sendLibraryEntryDM(interaction, entry);
     return replyPrivately(interaction, `**${entry.name}** was sent to your DMs.`, 'success');
   }
   return interaction.reply({ ...libraryPagePayload(interaction.guildId, interaction.options.getInteger('page') || 1), flags: MessageFlags.Ephemeral });
 }
 
+async function handleLibraryPanelButton(interaction) {
+  const tier = interaction.customId.slice(LIBRARY_PANEL_PREFIX.length);
+  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => (entry.tier || 'free') === tier);
+  return interaction.reply({ embeds: [new EmbedBuilder().setColor(tier === 'buyer' ? 0xf1c40f : 0x57f287).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Configs`).setDescription(entries.length ? entries.map((entry) => `**${entry.name}**${tier === 'buyer' ? ` — ${economyLabel(interaction.guildId, entry.price || 0)}` : ''}`).join('\n') : 'No entries available.')], flags: MessageFlags.Ephemeral });
+}
+
+async function handleLibraryStaffButton(interaction) {
+  requireAdminServer(interaction);
+  const tier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length);
+  const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => (entry.tier || 'free') === tier);
+  return replyPrivately(interaction, `Staff view — **${tier}** library entries:\n\n${entries.map((entry) => `• ${entry.name} (${entry.files.length} files)`).join('\n') || 'Empty.'}`, 'info');
+}
+
 async function handleLibraryAdminCommand(interaction) {
   requireAdminServer(interaction);
   const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.commandName === 'library-panel') {
+    const channel = requireTextChannel(interaction.options.getChannel('channel', true));
+    await canPost(interaction.guild, channel);
+    const tier = interaction.options.getString('tier', true);
+    const color = interaction.options.getString('color');
+    if (color) parseColor(color, 0);
+    await channel.send(libraryPanelPayload(tier, { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color }));
+    return replyPrivately(interaction, `${tier === 'buyer' ? 'Buyer' : 'Free'} library panel posted in ${channel}.`, 'success');
+  }
   if (interaction.commandName === 'config-library-add') {
     const name = interaction.options.getString('name', true).trim();
     const files = ['file1', 'file2', 'file3'].map((key) => interaction.options.getAttachment(key)).filter(Boolean).map((file) => ({ url: file.url, name: file.name }));
     const text = interaction.options.getString('text');
     if (!files.length && !text) throw new Error('Add at least one file or text content.');
     if (library.entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) throw new Error('A library entry with that name already exists.');
-    library.entries.push({ name, description: interaction.options.getString('description') || null, text: text || null, fileType: rewardExtension(interaction.options.getString('file-type')), files, createdAt: Date.now(), createdBy: interaction.user.id });
+    const tier = interaction.options.getString('tier') || 'free';
+    library.entries.push({ name, description: interaction.options.getString('description') || null, text: text || null, fileType: rewardExtension(interaction.options.getString('file-type')), files, tier, price: interaction.options.getInteger('price') || 0, createdAt: Date.now(), createdBy: interaction.user.id });
     await saveConfigurations();
     return replyPrivately(interaction, `Added **${name}** to the configuration library.`, 'success');
   }
@@ -2818,7 +2857,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
-      else if (['config-library-add', 'config-library-remove', 'config-library-settings'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
+      else if (['config-library-add', 'config-library-remove', 'config-library-settings', 'library-panel'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
@@ -2851,6 +2890,8 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && (interaction.customId.startsWith(GIVEAWAY_END_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_REFRESH_BUTTON_PREFIX) || interaction.customId.startsWith(GIVEAWAY_PARTICIPANTS_PREFIX))) await handleGiveawayStaffButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(POLL_VOTE_PREFIX)) await handlePollVote(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PAGE_PREFIX)) await handleLibraryPageButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
     if (interaction.isButton() && interaction.customId === RIVALS_SIGNUP_BUTTON_ID) await handleRivalsSignup(interaction);
