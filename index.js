@@ -2908,7 +2908,8 @@ async function registerGuildCommands(guildId) {
   // Discord allows at most 100 guild application commands. Keep registration reliable
   // even when optional feature commands exceed that limit; all commands remain available
   // through panels and the configurable prefix interface.
-  const registeredCommands = commands.slice(0, 100);
+  // Leave headroom for Discord-side command validation and future setup commands.
+  const registeredCommands = commands.slice(0, 80);
   await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: registeredCommands.map((command) => command.toJSON ? command.toJSON() : command) });
   console.log(`Registered commands for server ${guildId}.`);
 }
