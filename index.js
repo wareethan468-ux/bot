@@ -2660,17 +2660,21 @@ async function handleLibraryPanelButton(interaction) {
     return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(mode === 'mobile' ? '📱 Mobile Config View' : '📋 Copyable Config List').setDescription(text || 'No entries available.')], flags: MessageFlags.Ephemeral });
   }
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  const buttons = entries.slice(0, 5).map((entry, index) => new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}`).setLabel(entry.name.slice(0, 80)).setStyle(tier === 'buyer' ? ButtonStyle.Success : ButtonStyle.Primary));
+  const entryRows = entries.slice(0, 5).map((entry, index) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:copy`).setLabel(`${entry.name.slice(0, 65)} • Copy`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:dm`).setLabel('Send to DM').setEmoji('📩').setStyle(ButtonStyle.Success)));
   const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
-  return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Config Gallery`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**\n${entry.description || 'Use a button below to receive it privately.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: [new ActionRowBuilder().addComponents(buttons), new ActionRowBuilder().addComponents(utilityButtons)], flags: MessageFlags.Ephemeral });
+  return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Config Gallery`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**\n${entry.description || 'Use Copy or Send to DM.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: [...entryRows, new ActionRowBuilder().addComponents(utilityButtons)], flags: MessageFlags.Ephemeral });
 }
 
 async function handleLibraryEntryButton(interaction) {
-  const [tier, indexText] = interaction.customId.slice(LIBRARY_GET_PREFIX.length).split(':');
+  const [tier, indexText, action = 'dm'] = interaction.customId.slice(LIBRARY_GET_PREFIX.length).split(':');
   const index = Number(indexText);
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   const entry = entries[index];
   if (!entry) throw new Error('That library entry is no longer available.');
+  if (action === 'copy') {
+    const content = [entry.text || '', ...(entry.files || []).map((file) => file.url)].filter(Boolean).join('\n\n');
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔐 ${entry.name} — Copy`).setDescription(content ? '```\n' + content.slice(0, 3900) + '\n```' : 'This entry has no text to copy. Use **Send to DM** for attached files.')], flags: MessageFlags.Ephemeral });
+  }
   const library = ensureConfiguration(interaction.guildId).library;
   if ((entry.tier || 'free') === 'buyer' && !BOT_OWNER_IDS.has(interaction.user.id) && library.buyerAccess === 'role') {
     const member = await interaction.guild.members.fetch(interaction.user.id);
