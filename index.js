@@ -2649,13 +2649,8 @@ async function handleLibraryStaffButton(interaction) {
   const actionAndTier = interaction.customId.slice(LIBRARY_STAFF_PREFIX.length).split(':');
   const action = actionAndTier[0];
   const tier = actionAndTier[1];
-  if (action === 'add') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}`).setTitle('Add Library Entry').addComponents(
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(200)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000)),
-    new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price in CU coins (0 for free)').setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(12)),
-  ));
-  if (action === 'bulk') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_BULK_MODAL_ID}:${tier}`).setTitle('Add Multiple Text Entries').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('entries').setLabel('One per line: name | price | text').setStyle(TextInputStyle.Paragraph).setRequired(true).setMaxLength(4000))));
+  if (action === 'add') return replyPrivately(interaction, `📦 **Add a ${tier} library entry**\n\nUse the embed-based command setup:\n\`/config-library-add name:<name> tier:${tier} text:<text>\`\n\nFor files, attach them with \`file1\`, \`file2\`, or \`file3\`.`, 'info');
+  if (action === 'bulk') return replyPrivately(interaction, '📚 **Bulk library setup**\n\nUse `/config-library-add` for each entry. For large configs, upload files instead of putting the content in chat. The command supports three files per entry.', 'info');
   const entries = ensureConfiguration(interaction.guildId).library.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
   if (action === 'stats') return replyPrivately(interaction, `📈 **${tier} library stats**\nEntries: **${entries.length}**\nFiles: **${entries.reduce((sum, entry) => sum + entry.files.length, 0)}**\nText entries: **${entries.filter((entry) => entry.text).length}**`, 'info');
