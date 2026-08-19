@@ -388,7 +388,9 @@ const commands = [
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addAttachmentOption((o) => o.setName('file4').setDescription('Fourth file')).addAttachmentOption((o) => o.setName('file5').setDescription('Fifth file')).addAttachmentOption((o) => o.setName('file6').setDescription('Sixth file')).addAttachmentOption((o) => o.setName('file7').setDescription('Seventh file')).addAttachmentOption((o) => o.setName('file8').setDescription('Eighth file')).addAttachmentOption((o) => o.setName('file9').setDescription('Ninth file')).addAttachmentOption((o) => o.setName('file10').setDescription('Tenth file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)),
-  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: customize and deploy a reusable library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200)).addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40)).addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40)),
+  new SlashCommandBuilder().setName('library-panel').setDescription('Admin: customize and deploy a reusable library panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Panel channel').setRequired(true))).addStringOption((o) => o.setName('tier').setDescription('Panel type').setRequired(true).addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' }, { name: 'Combined setup', value: 'both' })).addStringOption((o) => o.setName('title').setDescription('Panel title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Panel description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Panel footer').setMaxLength(200)).addStringOption((o) => o.setName('browse-label').setDescription('Browse button label').setMaxLength(40)).addStringOption((o) => o.setName('add-label').setDescription('Add config button label').setMaxLength(40)).addStringOption((o) => o.setName('copy-label').setDescription('Copy button label').setMaxLength(40)).addStringOption((o) => o.setName('dm-label').setDescription('DM button label').setMaxLength(40)).addStringOption((o) => o.setName('mobile-label').setDescription('Mobile view button label').setMaxLength(40)).addStringOption((o) => o.setName('support-text').setDescription('Support/contact text shown on the panel').setMaxLength(200)).addStringOption((o) => o.setName('thumbnail-url').setDescription('Small panel image URL').setMaxLength(300)).addStringOption((o) => o.setName('image-url').setDescription('Large panel image URL').setMaxLength(300)),
+  new SlashCommandBuilder().setName('library-db-copy').setDescription('Admin: export/copy a named panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)),
+  new SlashCommandBuilder().setName('library-db-paste').setDescription('Admin: paste/import a named panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable panel name').setRequired(true).setMaxLength(30)).addStringOption((o) => o.setName('database').setDescription('JSON copied from /library-db-copy').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file').setDescription('JSON file from /library-db-copy')).addStringOption((o) => o.setName('mode').setDescription('Replace or merge entries').addChoices({ name: 'Replace', value: 'replace' }, { name: 'Merge', value: 'merge' })),
   new SlashCommandBuilder().setName('config-library-remove').setDescription('Admin: remove a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)),
   new SlashCommandBuilder().setName('config-library-edit').setDescription('Admin: edit a configuration/library entry and upload replacement files.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Existing entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('new-name').setDescription('Optional new name').setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('New description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Replacement text').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('Replacement file 1')).addAttachmentOption((o) => o.setName('file2').setDescription('Replacement file 2')).addAttachmentOption((o) => o.setName('file3').setDescription('Replacement file 3')).addAttachmentOption((o) => o.setName('file4').setDescription('Replacement file 4')).addAttachmentOption((o) => o.setName('file5').setDescription('Replacement file 5')).addAttachmentOption((o) => o.setName('file6').setDescription('Replacement file 6')).addAttachmentOption((o) => o.setName('file7').setDescription('Replacement file 7')).addAttachmentOption((o) => o.setName('file8').setDescription('Replacement file 8')).addAttachmentOption((o) => o.setName('file9').setDescription('Replacement file 9')).addAttachmentOption((o) => o.setName('file10').setDescription('Replacement file 10')).addStringOption((o) => o.setName('file-type').setDescription('Replacement extension').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('Buyer price').setMinValue(0).setMaxValue(1000000000)),
   new SlashCommandBuilder().setName('config-library-settings').setDescription('Admin: customize the library embed and buyer role.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('title').setDescription('Embed title').setMaxLength(100)).addStringOption((o) => o.setName('description').setDescription('Embed description').setMaxLength(1000)).addStringOption((o) => o.setName('color').setDescription('Hex color').setMaxLength(7)).addStringOption((o) => o.setName('footer').setDescription('Embed footer').setMaxLength(200)).addRoleOption((o) => o.setName('buyer-role').setDescription('Role required for buyer entries')), 
@@ -489,6 +491,63 @@ function scopedLibraryPayload(payload, panelId, options = {}) {
   }
   if (options.footer) payload.embeds[0].setFooter({ text: options.footer });
   return payload;
+}
+
+function validateUrlOption(value, label) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error();
+    return url.toString();
+  } catch {
+    throw new Error(`${label} must be a valid http or https URL.`);
+  }
+}
+
+function libraryDatabaseExport(panelId, library) {
+  return {
+    version: 1,
+    panelId,
+    exportedAt: new Date().toISOString(),
+    panel: library.panel || {},
+    buyerAccess: library.buyerAccess || 'role',
+    buyerRoleId: library.buyerRoleId || null,
+    entries: (library.entries || []).map((entry) => ({
+      name: entry.name,
+      description: entry.description || null,
+      text: entry.text || null,
+      fileType: entry.fileType || 'txt',
+      files: entry.files || [],
+      tier: entry.tier || 'free',
+      price: Number(entry.price || 0),
+      createdAt: entry.createdAt || Date.now(),
+      createdBy: entry.createdBy || null,
+    })),
+  };
+}
+
+function normalizeLibraryDatabase(data) {
+  const sourceEntries = Array.isArray(data) ? data : data?.entries;
+  if (!Array.isArray(sourceEntries)) throw new Error('Database JSON must include an entries array.');
+  const entries = sourceEntries.map((entry) => {
+    const name = String(entry?.name || '').trim();
+    if (!name) throw new Error('Every pasted entry needs a name.');
+    const tier = entry.tier === 'buyer' ? 'buyer' : 'free';
+    const price = Number(entry.price || 0);
+    if (!Number.isInteger(price) || price < 0) throw new Error(`Entry "${name}" has an invalid price.`);
+    return {
+      name: name.slice(0, 80),
+      description: entry.description ? String(entry.description).slice(0, 1000) : null,
+      text: entry.text ? String(entry.text).slice(0, 4000) : null,
+      fileType: rewardExtension(entry.fileType || 'txt'),
+      files: Array.isArray(entry.files) ? entry.files.filter((file) => file?.url && file?.name).map((file) => ({ url: String(file.url), name: String(file.name) })).slice(0, 10) : [],
+      tier,
+      price,
+      createdAt: Number(entry.createdAt) || Date.now(),
+      createdBy: entry.createdBy ? String(entry.createdBy) : null,
+    };
+  });
+  return { panel: data?.panel && !Array.isArray(data) ? data.panel : {}, buyerAccess: data?.buyerAccess || 'role', buyerRoleId: data?.buyerRoleId || null, entries };
 }
 
 function parseColor(value, fallback) {
@@ -2646,12 +2705,30 @@ function libraryPagePayload(guildId, page) {
 function libraryPanelPayload(tier, options = {}) {
   const buyer = tier === 'buyer';
   if (buyer && !options.description) options.description = 'Buyer-role members can receive these configs by DM.';
-  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287)).setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library')).setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.')).setFooter({ text: 'Use the buttons below for library and staff controls.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(buyer ? 'Browse Buyer Configs' : 'Browse Free Configs').setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:${tier}`).setLabel('View').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:${tier}`).setLabel('Add Entry').setEmoji('➕').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}edit:${tier}`).setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}remove:${tier}`).setLabel('Remove').setEmoji('🗑️').setStyle(ButtonStyle.Danger)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}bulk:${tier}`).setLabel('Bulk Add').setEmoji('📚').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}stats:${tier}`).setLabel('Stats').setEmoji('📈').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}export:${tier}`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}refresh:${tier}`).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}settings:${tier}`).setLabel('Settings Help').setEmoji('⚙️').setStyle(ButtonStyle.Secondary))] };
+  const embed = new EmbedBuilder()
+    .setColor(parseColor(options.color, buyer ? 0xf1c40f : 0x57f287))
+    .setTitle(options.title || (buyer ? '💎 Buyer Config Library' : '🆓 Free Config Library'))
+    .setDescription(options.description || (buyer ? 'Purchase script configs with CU coins, then receive them by DM.' : 'Browse and receive free script configs by DM.'))
+    .setFooter({ text: options.footer || 'Use the buttons below for library and staff controls.' })
+    .setTimestamp();
+  if (options.supportText) embed.addFields({ name: 'Support', value: options.supportText, inline: false });
+  if (options.thumbnailUrl) embed.setThumbnail(options.thumbnailUrl);
+  if (options.imageUrl) embed.setImage(options.imageUrl);
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}${tier}`).setLabel(options.browseLabel || (buyer ? 'Browse Buyer Configs' : 'Browse Free Configs')).setEmoji(buyer ? '💎' : '📦').setStyle(buyer ? ButtonStyle.Success : ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:${tier}`).setLabel('View').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:${tier}`).setLabel(options.addLabel || 'Add Entry').setEmoji('➕').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}edit:${tier}`).setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}remove:${tier}`).setLabel('Remove').setEmoji('🗑️').setStyle(ButtonStyle.Danger)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}bulk:${tier}`).setLabel('Bulk Add').setEmoji('📚').setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}stats:${tier}`).setLabel('Stats').setEmoji('📈').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}export:${tier}`).setLabel('Export').setEmoji('📤').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}refresh:${tier}`).setLabel('Refresh').setEmoji('🔄').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}settings:${tier}`).setLabel('Settings Help').setEmoji('⚙️').setStyle(ButtonStyle.Secondary))] };
 }
 
 function librarySetupPanelPayload(options = {}) {
   if (!options.description) options.description = 'Choose a free config or a buyer config. Buyer configs require the configured buyer role and are delivered by DM.';
-  return { embeds: [new EmbedBuilder().setColor(parseColor(options.color, 0x5865f2)).setTitle(options.title || '📚 Configuration Library Setup').setDescription(options.description || 'Choose a free config or purchase a buyer config. Staff controls are available on the same panel.').setFooter({ text: 'Use the buttons below to browse or manage the library.' }).setTimestamp()], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}free`).setLabel('Free Configs').setEmoji('🆓').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}buyer`).setLabel('Buyer Configs').setEmoji('💎').setStyle(ButtonStyle.Primary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:both`).setLabel('Staff View').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:free`).setLabel('Add Entry').setEmoji('➕').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}edit:free`).setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}remove:free`).setLabel('Remove').setEmoji('🗑️').setStyle(ButtonStyle.Danger))] };
+  const embed = new EmbedBuilder()
+    .setColor(parseColor(options.color, 0x5865f2))
+    .setTitle(options.title || '📚 Configuration Library Setup')
+    .setDescription(options.description || 'Choose a free config or purchase a buyer config. Staff controls are available on the same panel.')
+    .setFooter({ text: options.footer || 'Use the buttons below to browse or manage the library.' })
+    .setTimestamp();
+  if (options.supportText) embed.addFields({ name: 'Support', value: options.supportText, inline: false });
+  if (options.thumbnailUrl) embed.setThumbnail(options.thumbnailUrl);
+  if (options.imageUrl) embed.setImage(options.imageUrl);
+  return { embeds: [embed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}free`).setLabel(options.freeLabel || 'Free Configs').setEmoji('🆓').setStyle(ButtonStyle.Success), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}buyer`).setLabel(options.buyerLabel || 'Buyer Configs').setEmoji('💎').setStyle(ButtonStyle.Primary)), new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}view:both`).setLabel('Staff View').setEmoji('👁️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}add:free`).setLabel(options.addLabel || 'Add Entry').setEmoji('➕').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}edit:free`).setLabel('Edit').setEmoji('✏️').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_PREFIX}remove:free`).setLabel('Remove').setEmoji('🗑️').setStyle(ButtonStyle.Danger))] };
 }
 
 async function sendLibraryEntryDM(interaction, entry) {
@@ -2701,6 +2778,7 @@ async function handleLibraryPanelButton(interaction) {
   const panelId = panelActionParts.length >= 2 ? panelActionParts.pop() : interaction.message.id;
   const tier = panelActionParts.join(':');
   const panelLibrary = libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library;
+  const panelOptions = panelLibrary.panel || {};
   if (tier.startsWith('mobile:') || tier.startsWith('copy:')) {
     const [mode, selectedTier] = tier.split(':');
     const entries = panelLibrary.entries.filter((entry) => selectedTier === 'both' || (entry.tier || 'free') === selectedTier);
@@ -2708,8 +2786,8 @@ async function handleLibraryPanelButton(interaction) {
     return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(mode === 'mobile' ? '📱 Mobile Config View' : '📋 Copyable Config List').setDescription(text || 'No entries available.')], flags: MessageFlags.Ephemeral });
   }
   const entries = panelLibrary.entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
-  const entryRows = entries.slice(0, 4).map((entry, index) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:copy:${panelId}`).setLabel(`${entry.name.slice(0, 65)} • Copy`).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:dm:${panelId}`).setLabel('Send to DM').setEmoji('📩').setStyle(ButtonStyle.Success)));
-  const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}:${panelId}`).setLabel('Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}:${panelId}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
+  const entryRows = entries.slice(0, 4).map((entry, index) => new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:copy:${panelId}`).setLabel(`${entry.name.slice(0, 45)} • ${panelOptions.copyLabel || 'Copy Script'}`.slice(0, 80)).setStyle(ButtonStyle.Primary), new ButtonBuilder().setCustomId(`${LIBRARY_GET_PREFIX}${tier}:${index}:dm:${panelId}`).setLabel(panelOptions.dmLabel || 'Send to DM').setEmoji('📩').setStyle(ButtonStyle.Success)));
+  const utilityButtons = [new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}mobile:${tier}:${panelId}`).setLabel(panelOptions.mobileLabel || 'Mobile View').setEmoji('📱').setStyle(ButtonStyle.Secondary), new ButtonBuilder().setCustomId(`${LIBRARY_PANEL_PREFIX}copy:${tier}:${panelId}`).setLabel('Copy Details').setEmoji('📋').setStyle(ButtonStyle.Secondary)];
   return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`${tier === 'buyer' ? 'Buyer' : 'Free'} Config Gallery`).setDescription(entries.length ? `${entries.map((entry) => `**${entry.name}**\n${entry.description || 'Use Copy or Send to DM.'}`).join('\n\n')}${entries.length > 5 ? '\n\nShowing the first 5 entries.' : ''}` : 'No entries available.')], components: [...entryRows, new ActionRowBuilder().addComponents(utilityButtons)], flags: MessageFlags.Ephemeral });
 }
 
@@ -2827,6 +2905,45 @@ async function handleLibraryStaffModal(interaction) {
 async function handleLibraryAdminCommand(interaction) {
   requireAdminServer(interaction);
   const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.commandName === 'library-db-copy') {
+    const panelName = interaction.options.getString('name', true).trim();
+    const panelId = namedLibraryKey(panelName);
+    const panelLibrary = libraryFor(interaction.guildId, panelId, true);
+    const json = JSON.stringify(libraryDatabaseExport(panelId, panelLibrary), null, 2);
+    const fileName = `${panelId}-database.json`;
+    return interaction.reply({ content: `Copied **${panelName}** database. Paste this file into \`/library-db-paste\` to clone or restore it.`, files: [new AttachmentBuilder(Buffer.from(json, 'utf8'), { name: fileName })], flags: MessageFlags.Ephemeral });
+  }
+  if (interaction.commandName === 'library-db-paste') {
+    const panelName = interaction.options.getString('name', true).trim();
+    const panelId = namedLibraryKey(panelName);
+    const pastedText = interaction.options.getString('database');
+    const file = interaction.options.getAttachment('file');
+    if (!pastedText && !file) throw new Error('Paste database JSON or upload the JSON file from /library-db-copy.');
+    let raw = pastedText;
+    if (!raw && file) {
+      const response = await fetch(file.url).catch(() => null);
+      if (!response?.ok) throw new Error('I could not download that database file.');
+      raw = Buffer.from(await response.arrayBuffer()).toString('utf8');
+    }
+    let parsed;
+    try { parsed = JSON.parse(raw); } catch { throw new Error('Database paste must be valid JSON.'); }
+    const incoming = normalizeLibraryDatabase(parsed);
+    const target = libraryFor(interaction.guildId, panelId, true);
+    const mode = interaction.options.getString('mode') || 'replace';
+    if (mode === 'merge') {
+      const byName = new Map(target.entries.map((entry) => [entry.name.toLowerCase(), entry]));
+      for (const entry of incoming.entries) byName.set(entry.name.toLowerCase(), { ...byName.get(entry.name.toLowerCase()), ...entry, importedAt: Date.now(), importedBy: interaction.user.id });
+      target.entries = [...byName.values()];
+      target.panel = { ...target.panel, ...incoming.panel, name: panelName };
+    } else {
+      target.entries = incoming.entries.map((entry) => ({ ...entry, importedAt: Date.now(), importedBy: interaction.user.id }));
+      target.panel = { ...incoming.panel, name: panelName };
+    }
+    target.buyerAccess = incoming.buyerAccess;
+    target.buyerRoleId = incoming.buyerRoleId;
+    await saveConfigurations();
+    return replyPrivately(interaction, `Pasted **${incoming.entries.length}** entries into **${panelName}** using **${mode}** mode. Use \`/library-panel name:${panelName}\` to deploy or refresh it.`, 'success');
+  }
   if (interaction.commandName === 'library-panel') {
     const channel = requireTextChannel(interaction.options.getChannel('channel', true));
     await canPost(interaction.guild, channel);
@@ -2836,7 +2953,7 @@ async function handleLibraryAdminCommand(interaction) {
     const color = interaction.options.getString('color');
     if (color) parseColor(color, 0);
     const deployedLibrary = libraryFor(interaction.guildId, panelId, true);
-    const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color, footer: interaction.options.getString('footer'), browseLabel: interaction.options.getString('browse-label'), addLabel: interaction.options.getString('add-label') };
+    const updates = { title: interaction.options.getString('title'), description: interaction.options.getString('description'), color, footer: interaction.options.getString('footer'), browseLabel: interaction.options.getString('browse-label'), addLabel: interaction.options.getString('add-label'), copyLabel: interaction.options.getString('copy-label'), dmLabel: interaction.options.getString('dm-label'), mobileLabel: interaction.options.getString('mobile-label'), supportText: interaction.options.getString('support-text'), thumbnailUrl: validateUrlOption(interaction.options.getString('thumbnail-url'), 'Thumbnail URL'), imageUrl: validateUrlOption(interaction.options.getString('image-url'), 'Image URL') };
     const panelOptions = { ...deployedLibrary.panel, ...Object.fromEntries(Object.entries(updates).filter(([, value]) => value !== null)), name: panelName, tier };
     const payload = tier === 'both' ? librarySetupPanelPayload(panelOptions) : libraryPanelPayload(tier, panelOptions);
     const message = await channel.send(scopedLibraryPayload(payload, panelId, panelOptions));
@@ -3122,7 +3239,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
-      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'library-panel'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
+      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'library-panel', 'library-db-copy', 'library-db-paste'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
