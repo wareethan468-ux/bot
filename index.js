@@ -43,6 +43,7 @@ const GIVEAWAY_END_BUTTON_PREFIX = 'giveaway:end:';
 const GIVEAWAY_REFRESH_BUTTON_PREFIX = 'giveaway:refresh:';
 const GIVEAWAY_PARTICIPANTS_PREFIX = 'giveaway:participants:';
 const POLL_VOTE_PREFIX = 'poll:vote:';
+const GLOBAL_BOT_BLACKLIST = new Set(['1324049089314426924', '1521163559780876309']);
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -363,6 +364,8 @@ const commands = [
     .setDescription('List role access overwrites for a channel or category.')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
     .addChannelOption((option) => option.setName('channel').setDescription('Channel or category').addChannelTypes(ChannelType.GuildCategory, ChannelType.GuildText, ChannelType.GuildAnnouncement, ChannelType.GuildVoice, ChannelType.GuildStageVoice).setRequired(true)),
+  new SlashCommandBuilder().setName('maintenance-lock').setDescription('Administrator: lock a category to one maintenance role.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to lock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)).addRoleOption((o) => o.setName('role').setDescription('Only this role can see the category').setRequired(true)),
+  new SlashCommandBuilder().setName('maintenance-unlock').setDescription('Administrator: remove maintenance visibility restrictions.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to unlock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)),
   ...organizedModerationCommands,
 ].map((command) => command.toJSON());
 
@@ -815,6 +818,28 @@ async function handleChannelAccessCommand(interaction) {
   }
   await channel.permissionOverwrites.delete(role.id, `Access removed by ${interaction.user.tag}`);
   return replyPrivately(interaction, `Removed ${role}'s custom access rule from ${channel}.`, 'success');
+}
+
+async function handleMaintenanceCommand(interaction) {
+  requireAdministrator(interaction);
+  const category = interaction.options.getChannel('category', true);
+  const botMember = await interaction.guild.members.fetchMe();
+  if (!botMember.permissions.has(PermissionFlagsBits.ManageChannels)) throw new Error('I need Manage Channels permission.');
+  if (interaction.commandName === 'maintenance-lock') {
+    const role = interaction.options.getRole('role', true);
+    if (role.managed || role.id === interaction.guild.id) throw new Error('Choose a normal, non-managed maintenance role.');
+    const targets = [category, ...category.children.cache.values()];
+    for (const target of targets) {
+      await target.permissionOverwrites.edit(interaction.guild.roles.everyone, { ViewChannel: false }, { reason: `Maintenance lock by ${interaction.user.tag}` });
+      await target.permissionOverwrites.edit(role, { ViewChannel: true, ReadMessageHistory: true, SendMessages: true }, { reason: `Maintenance access by ${interaction.user.tag}` });
+    }
+    return replyPrivately(interaction, `🔒 ${category} is locked for maintenance. Only ${role} can see it and its channels.`, 'success');
+  }
+  const targets = [category, ...category.children.cache.values()];
+  for (const target of targets) {
+    await target.permissionOverwrites.edit(interaction.guild.roles.everyone, { ViewChannel: null }, { reason: `Maintenance unlock by ${interaction.user.tag}` });
+  }
+  return replyPrivately(interaction, `🔓 Maintenance lock removed from ${category}.`, 'success');
 }
 
 function economyFor(guildId) {
@@ -2501,6 +2526,7 @@ client.on('messageCreate', trackServerMessage);
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (GLOBAL_BOT_BLACKLIST.has(interaction.user.id)) return replyPrivately(interaction, 'You are blocked from using this bot.', 'error');
     const serverBlacklist = interaction.guildId ? configuration(interaction.guildId)?.userBlacklist || {} : {};
     if (serverBlacklist[interaction.user.id] && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
       return replyPrivately(interaction, 'You are blacklisted from using this bot in this server.', 'error');
@@ -2542,6 +2568,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'message-builder') await handleMessageBuilder(interaction);
       else if (interaction.commandName === 'message-edit') await handleMessageEdit(interaction);
       else if (interaction.commandName === 'channel-access' || interaction.commandName === 'channel-access-list') await handleChannelAccessCommand(interaction);
+      else if (interaction.commandName === 'maintenance-lock' || interaction.commandName === 'maintenance-unlock') await handleMaintenanceCommand(interaction);
       else if (['balance', 'daily', 'coinflip', 'slots', 'dice', 'roulette', 'coin-leaderboard', 'economy-config', 'economy-reset', 'economy-add', 'economy-remove'].includes(interaction.commandName)) await handleEconomyCommand(interaction);
       else if (['duel', 'duel-leaderboard', 'duel-result'].includes(interaction.commandName)) await handleDuelCommand(interaction);
       else if (organizedModerationCommandNames.has(interaction.commandName)) await handleOrganizedModerationCommand(interaction, { requireTextChannel, canPost, replyPrivately, ensureConfiguration, saveConfigurations });
