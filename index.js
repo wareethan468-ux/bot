@@ -419,7 +419,7 @@ const commands = [
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
-  new SlashCommandBuilder().setName('command-search').setDescription('Search bot commands by name, keyword, or category.').addStringOption((o) => o.setName('query').setDescription('Optional search text').setMaxLength(50)).addStringOption((o) => o.setName('category').setDescription('Optional command category').addChoices({ name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
+  new SlashCommandBuilder().setName('command-search').setDescription('Search the live command database, arguments, and usage.').addStringOption((o) => o.setName('query').setDescription('Command name, argument, or keyword').setAutocomplete(true).setMaxLength(50)).addStringOption((o) => o.setName('category').setDescription('Optional command category').addChoices({ name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addAttachmentOption((o) => o.setName('file4').setDescription('Fourth file')).addAttachmentOption((o) => o.setName('file5').setDescription('Fifth file')).addAttachmentOption((o) => o.setName('file6').setDescription('Sixth file')).addAttachmentOption((o) => o.setName('file7').setDescription('Seventh file')).addAttachmentOption((o) => o.setName('file8').setDescription('Eighth file')).addAttachmentOption((o) => o.setName('file9').setDescription('Ninth file')).addAttachmentOption((o) => o.setName('file10').setDescription('Tenth file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)).addStringOption((o) => o.setName('panel-name').setDescription('Optional reusable panel database name').setMaxLength(30)),
@@ -1057,23 +1057,50 @@ async function handleGlobalWhitelistCommand(interaction) {
   return replyPrivately(interaction, `${type === 'user' ? 'User' : 'Server'} ID \`${targetId}\` was ${action === 'add' ? 'added to' : 'removed from'} the global whitelist.`, 'success');
 }
 
-function commandSearchEmbed(query, category, prefix = '/') {
+const commandOptionTypeNames = { 3: 'text', 4: 'integer', 5: 'true/false', 6: 'user', 7: 'channel', 8: 'role', 9: 'mention', 10: 'number', 11: 'file' };
+
+function liveCommandDatabase() {
+  return commands.map((command) => ({
+    ...command,
+    searchable: [command.name, command.description, ...(command.options || []).flatMap((option) => [option.name, option.description, ...(option.choices || []).flatMap((choice) => [choice.name, String(choice.value)])])].filter(Boolean).join(' ').toLowerCase(),
+  }));
+}
+
+function commandSearchMatches(query, category, limit = 12) {
   const categoryNames = category === 'moderation' ? [...organizedModerationCommandNames] : category && commandGroups[category] ? commandGroups[category] : null;
   const cleanedQuery = query?.toLowerCase().trim();
-  const matches = commands
+  return liveCommandDatabase()
     .filter((command) => !categoryNames || categoryNames.includes(command.name))
-    .filter((command) => !cleanedQuery || command.name.includes(cleanedQuery) || command.description?.toLowerCase().includes(cleanedQuery))
-    .slice(0, 20);
+    .filter((command) => !cleanedQuery || command.searchable.includes(cleanedQuery))
+    .sort((a, b) => cleanedQuery ? Number(b.name === cleanedQuery) - Number(a.name === cleanedQuery) || Number(b.name.startsWith(cleanedQuery)) - Number(a.name.startsWith(cleanedQuery)) || a.name.localeCompare(b.name) : a.name.localeCompare(b.name))
+    .slice(0, limit);
+}
+
+function commandSearchEmbed(query, category, prefix = '/') {
+  const matches = commandSearchMatches(query, category, query ? 10 : 12);
   const lines = matches.map((command) => {
-    const options = (command.options || []).map((option) => '`' + (prefix === '/' ? '' : '--') + option.name + (option.required ? '*' : '') + '`').join(' ');
-    return `**${prefix}${command.name}${options ? ` ${options}` : ''}**\n${command.description || 'No description.'}`;
+    const options = (command.options || []).map((option) => {
+      const type = commandOptionTypeNames[option.type] || 'value';
+      const choices = option.choices?.length ? ` Choices: ${option.choices.map((choice) => `\`${choice.value}\``).join(', ')}.` : '';
+      return `\`${prefix === '/' ? option.name : `--${option.name}`} <${type}>${option.required ? '*' : ''}\` — ${option.description || 'No description.'}.${choices}`;
+    });
+    return `**${prefix}${command.name}**\n${command.description || 'No description.'}${options.length ? `\n${options.join('\n')}` : '\n`No arguments`'}`;
   });
   return new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('Command Search')
-    .setDescription(lines.join('\n\n') || 'No commands matched that search.')
+    .setDescription((lines.join('\n\n') || 'No commands matched that search.').slice(0, 4000))
     .setFooter({ text: prefix === '/' ? 'Required arguments are marked with *.' : `Required arguments are marked with *. Quotes work for spaces, for example: ${prefix}say --message "Hello world".` })
     .setTimestamp();
+}
+
+async function handleCommandSearchAutocomplete(interaction) {
+  const query = interaction.options.getFocused()?.toLowerCase().trim();
+  const matches = commandSearchMatches(query, null, 25);
+  return interaction.respond(matches.map((command) => ({
+    name: `${command.name} — ${command.description || 'No description'}`.slice(0, 100),
+    value: command.name,
+  })));
 }
 
 function uwuText(content) {
@@ -1254,6 +1281,7 @@ function createPrefixInteraction(message, command, argumentText) {
     createdTimestamp: message.createdTimestamp,
     deferred: false,
     replied: false,
+    isAutocomplete: () => false,
     isChatInputCommand: () => true,
     isButton: () => false,
     isModalSubmit: () => false,
@@ -3813,6 +3841,10 @@ client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reac
 
 client.on('interactionCreate', async (interaction) => {
   try {
+    if (interaction.isAutocomplete()) {
+      if (interaction.commandName === 'command-search') await handleCommandSearchAutocomplete(interaction);
+      return;
+    }
     const access = accessControlStore();
     if (!BOT_OWNER_IDS.has(interaction.user.id) && (GLOBAL_BOT_BLACKLIST.has(interaction.user.id) || access.userBlacklist[interaction.user.id] || (interaction.guildId && (access.serverBlacklist[interaction.guildId] || OWNER_ONLY_SERVER_IDS.has(interaction.guildId))))) return replyPrivately(interaction, 'You are blocked from using this bot in this server.', 'error');
     const serverBlacklist = interaction.guildId ? configuration(interaction.guildId)?.userBlacklist || {} : {};
