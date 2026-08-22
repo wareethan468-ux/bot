@@ -3,6 +3,7 @@ import {
   moderationCommands as organizedModerationCommands,
   moderationCommandNames as organizedModerationCommandNames,
   handleModerationCommand as handleOrganizedModerationCommand,
+  sweepExpiredMutes,
 } from './commands/moderation.js';
 import { commandGroups } from './commands/groups.js';
 
@@ -3661,12 +3662,13 @@ async function registerGuildCommands(guildId) {
   // even when optional feature commands exceed that limit; all commands remain available
   // through panels and the configurable prefix interface.
   // Leave headroom for Discord-side command validation and future setup commands.
+  const slashModerationCommands = new Set(['mute', 'unmute', 'timeout', 'untimeout']);
   const hiddenFromSlash = new Set([
-    ...organizedModerationCommandNames,
+    ...[...organizedModerationCommandNames].filter((name) => !slashModerationCommands.has(name)),
     ...(commandGroups.economy || []),
   ]);
   const prioritySlashCommands = new Set([
-    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count',
+    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'mute', 'unmute', 'timeout', 'untimeout',
     'library', 'config-library', 'config-library-add', 'config-library-edit',
     'config-library-remove', 'config-library-settings', 'library-db-copy', 'library-db-paste',
   ]);
@@ -3684,6 +3686,8 @@ async function registerGuildCommands(guildId) {
 
 client.once('clientReady', async (readyClient) => {
   console.log(`Ready as ${readyClient.user.tag}`);
+  await sweepExpiredMutes(readyClient, { ensureConfiguration, saveConfigurations }).catch((error) => console.error('Mute expiry check failed:', error));
+  setInterval(() => sweepExpiredMutes(readyClient, { ensureConfiguration, saveConfigurations }).catch((error) => console.error('Mute expiry check failed:', error)), 60_000).unref();
   const registrationResults = await Promise.allSettled([...readyClient.guilds.cache.keys()].map(registerGuildCommands));
   for (const result of registrationResults) {
     if (result.status === 'rejected') console.error('Command registration failed:', result.reason?.message || result.reason);
