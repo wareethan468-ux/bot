@@ -1059,14 +1059,14 @@ function commandSearchEmbed(query, category, prefix = '/') {
     .filter((command) => !cleanedQuery || command.name.includes(cleanedQuery) || command.description?.toLowerCase().includes(cleanedQuery))
     .slice(0, 20);
   const lines = matches.map((command) => {
-    const options = (command.options || []).map((option) => '`' + option.name + (option.required ? '*' : '') + '`').join(' ');
+    const options = (command.options || []).map((option) => '`' + (prefix === '/' ? '' : '--') + option.name + (option.required ? '*' : '') + '`').join(' ');
     return `**${prefix}${command.name}${options ? ` ${options}` : ''}**\n${command.description || 'No description.'}`;
   });
   return new EmbedBuilder()
     .setColor(0x5865f2)
     .setTitle('Command Search')
     .setDescription(lines.join('\n\n') || 'No commands matched that search.')
-    .setFooter({ text: 'Required arguments are marked with *.' })
+    .setFooter({ text: prefix === '/' ? 'Required arguments are marked with *.' : `Required arguments are marked with *. Quotes work for spaces, for example: ${prefix}say --message "Hello world".` })
     .setTimestamp();
 }
 
@@ -1092,9 +1092,117 @@ async function handlePrefixCommand(interaction) {
   return replyPrivately(interaction, `Server prefix changed to \`${value}\`.`, 'success');
 }
 
-async function handlePrefixMessageCommand(message, prefix, name, args) {
+function tokenizePrefixArguments(input) {
+  const tokens = [];
+  const pattern = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|(\S+)/g;
+  let match;
+  while ((match = pattern.exec(input)) !== null) tokens.push((match[1] ?? match[2] ?? match[3]).replace(/\\([\\"'])/g, '$1'));
+  return tokens;
+}
+
+function prefixValueForOption(message, option, rawValue, attachmentIndex) {
+  if (option.type === 11) return message.attachments.at(attachmentIndex.value++);
+  if (rawValue == null) return null;
+  if (option.type === 4) return Number.parseInt(rawValue, 10);
+  if (option.type === 10) return Number.parseFloat(rawValue);
+  if (option.type === 5) return ['true', 'yes', 'on', '1'].includes(rawValue.toLowerCase());
+  const id = rawValue.match(/^<[@#&]!?([0-9]{17,20})>$/)?.[1] || (/^[0-9]{17,20}$/.test(rawValue) ? rawValue : null);
+  if (option.type === 6) return message.mentions.users.get(id) || message.client.users.cache.get(id) || message.guild.members.cache.get(id)?.user || null;
+  if (option.type === 7) return message.mentions.channels.get(id) || message.guild.channels.cache.get(id) || message.guild.channels.cache.find((channel) => channel.name.toLowerCase() === rawValue.toLowerCase()) || null;
+  if (option.type === 8) return message.mentions.roles.get(id) || message.guild.roles.cache.get(id) || message.guild.roles.cache.find((role) => role.name.toLowerCase() === rawValue.toLowerCase()) || null;
+  return rawValue;
+}
+
+function createPrefixInteraction(message, command, argumentText) {
+  const tokens = tokenizePrefixArguments(argumentText);
+  const named = new Map();
+  const positional = [];
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = tokens[index];
+    if (token.startsWith('--')) {
+      const [key, inlineValue] = token.slice(2).split(/=(.*)/s, 2);
+      const next = inlineValue ?? (tokens[index + 1]?.startsWith('--') ? 'true' : tokens[++index]);
+      named.set(key.toLowerCase(), next);
+    } else positional.push(token);
+  }
+  const values = new Map();
+  const attachmentIndex = { value: 0 };
+  let positionalIndex = 0;
+  for (const option of command.options || []) {
+    const raw = named.has(option.name) ? named.get(option.name) : option.type === 11 ? undefined : positional[positionalIndex++];
+    const value = prefixValueForOption(message, option, raw, attachmentIndex);
+    if (option.required && (value == null || (typeof value === 'number' && Number.isNaN(value)))) throw new Error(`Missing or invalid required argument \`${option.name}\`. Use \`--${option.name} value\`.`);
+    if (value != null && option.choices?.length && !option.choices.some((choice) => choice.value === value)) throw new Error(`Invalid \`${option.name}\`. Choose: ${option.choices.map((choice) => choice.value).join(', ')}.`);
+    if (typeof value === 'number' && option.min_value != null && value < option.min_value) throw new Error(`\`${option.name}\` must be at least ${option.min_value}.`);
+    if (typeof value === 'number' && option.max_value != null && value > option.max_value) throw new Error(`\`${option.name}\` must be at most ${option.max_value}.`);
+    if (typeof value === 'string' && option.min_length != null && value.length < option.min_length) throw new Error(`\`${option.name}\` is too short.`);
+    if (typeof value === 'string' && option.max_length != null && value.length > option.max_length) throw new Error(`\`${option.name}\` is too long.`);
+    if (value != null && !(typeof value === 'number' && Number.isNaN(value))) values.set(option.name, value);
+  }
+  let responseMessage;
+  const cleanPayload = (payload) => {
+    if (typeof payload === 'string') return { content: payload };
+    const { flags, ephemeral, ...clean } = payload || {};
+    return clean;
+  };
+  const requiredValue = (name, label) => {
+    const value = values.get(name);
+    if (value == null) throw new Error(`Missing or invalid ${label} argument \`${name}\`.`);
+    return value;
+  };
+  const interaction = {
+    commandName: command.name,
+    client: message.client,
+    guild: message.guild,
+    guildId: message.guild.id,
+    channel: message.channel,
+    channelId: message.channel.id,
+    user: message.author,
+    member: message.member,
+    memberPermissions: message.member?.permissions,
+    appPermissions: message.guild.members.me?.permissions,
+    createdTimestamp: message.createdTimestamp,
+    deferred: false,
+    replied: false,
+    isChatInputCommand: () => true,
+    isButton: () => false,
+    isModalSubmit: () => false,
+    options: {
+      getString: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'text') : null),
+      getInteger: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'number') : null),
+      getBoolean: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'boolean') : null),
+      getUser: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'user') : null),
+      getChannel: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'channel') : null),
+      getRole: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'role') : null),
+      getAttachment: (name, required) => values.get(name) ?? (required ? requiredValue(name, 'attachment') : null),
+    },
+    reply: async (payload) => {
+      interaction.replied = true;
+      responseMessage = await message.reply(cleanPayload(payload));
+      return responseMessage;
+    },
+    deferReply: async () => {
+      interaction.deferred = true;
+      responseMessage = await message.reply('Working…');
+      return responseMessage;
+    },
+    editReply: async (payload) => {
+      interaction.replied = true;
+      if (responseMessage) return responseMessage.edit(cleanPayload(payload));
+      responseMessage = await message.reply(cleanPayload(payload));
+      return responseMessage;
+    },
+    followUp: async (payload) => message.reply(cleanPayload(payload)),
+    deleteReply: async () => responseMessage?.delete(),
+    showModal: async () => message.reply('That option opens a Discord form and is only available through the slash-command version.'),
+  };
+  return interaction;
+}
+
+async function handlePrefixMessageCommand(message, prefix, name, argumentText) {
   const commandName = name?.toLowerCase();
   const config = ensureConfiguration(message.guild.id);
+  const args = tokenizePrefixArguments(argumentText);
   if (commandName === 'leave') {
     if (!BOT_OWNER_IDS.has(message.author.id)) return;
     const guildId = args[0];
@@ -1104,6 +1212,9 @@ async function handlePrefixMessageCommand(message, prefix, name, args) {
     await targetGuild.leave();
     return message.reply('Left **' + targetGuild.name + '** (`' + guildId + '`).');
   }
+  const registeredCommand = commands.find((item) => item.name === commandName);
+  const requiredPermissions = registeredCommand?.default_member_permissions;
+  if (requiredPermissions && !message.member?.permissions?.has(BigInt(requiredPermissions))) return message.reply('You do not have permission to use that command.');
   if (commandName === 'help' || commandName === 'commands') {
     const query = args.join(' ').trim();
     return message.reply({ embeds: [query ? commandSearchEmbed(query, null, prefix) : new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Prefix Commands').setDescription(`Prefix: \`${prefix}\`\n\n\`${prefix}commands [search]\`\n\`${prefix}command-search [search]\`\n\`${prefix}serverinfo\`\n\`${prefix}member-count\`\n\`${prefix}panel-ids\`\n\`${prefix}prefix [new prefix]\``).setFooter({ text: 'Slash commands are still fully supported.' })] });
@@ -1131,7 +1242,13 @@ async function handlePrefixMessageCommand(message, prefix, name, args) {
     const lines = panels.map(([panelId, item]) => `**${item.panel?.name || panelId.replace(/^named-/, '')}** — \`${panelId}\` (${(item.entries || []).length} entries)`);
     return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('Saved Panel IDs').setDescription(lines.join('\n').slice(0, 3900)).setTimestamp()] });
   }
-  return message.reply(`Unknown prefix command. Try \`${prefix}commands ${commandName || ''}\` or use slash commands.`);
+  const command = registeredCommand;
+  if (!command) return message.reply(`Unknown prefix command. Try \`${prefix}commands ${commandName || ''}\`.`);
+  try {
+    client.emit('interactionCreate', createPrefixInteraction(message, command, argumentText));
+  } catch (error) {
+    return message.reply(error instanceof Error ? error.message : 'Could not parse that prefix command.');
+  }
 }
 
 async function handleApprovalButton(interaction) {
@@ -3567,9 +3684,10 @@ client.on('messageCreate', async (message) => {
   if (message.author.bot || !message.guild) return;
   const prefix = ensureConfiguration(message.guild.id).prefix || '!';
   if (!message.content.startsWith(prefix)) return;
-  const [name] = message.content.slice(prefix.length).trim().split(/\s+/);
-  const args = message.content.slice(prefix.length).trim().split(/\s+/).slice(1);
-  await handlePrefixMessageCommand(message, prefix, name, args);
+  const body = message.content.slice(prefix.length).trim();
+  const [name] = body.split(/\s+/);
+  const argumentText = body.slice(name?.length || 0).trim();
+  await handlePrefixMessageCommand(message, prefix, name, argumentText);
 });
 client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reaction, user).catch((error) => console.error('Reaction reward failed:', error)));
 
