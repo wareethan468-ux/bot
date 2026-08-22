@@ -3632,7 +3632,12 @@ async function start() {
     const configBotDirectory = join(process.cwd(), 'config-library-bot');
     const configBotEntry = join(configBotDirectory, 'index.js');
     const hasConfigBotEnv = existsSync(join(configBotDirectory, '.env'));
-    if (existsSync(configBotEntry) && (hasConfigBotEnv || process.env.CONFIG_BOT_TOKEN?.trim())) {
+    const configBotToken = process.env.CONFIG_BOT_TOKEN?.trim();
+    const configBotClientId = process.env.CONFIG_CLENT_ID?.trim() || process.env.CONFIG_BOT_CLIENT_ID?.trim();
+    if (!hasConfigBotEnv && (configBotToken || configBotClientId) && (!configBotToken || !configBotClientId)) {
+      throw new Error('CONFIG_BOT_TOKEN and CONFIG_CLENT_ID are both required to start the config library bot.');
+    }
+    if (existsSync(configBotEntry) && (hasConfigBotEnv || (configBotToken && configBotClientId))) {
       const configEnv = { ...process.env, CONFIG_LIBRARY_CHILD: '1' };
       delete configEnv.DISCORD_TOKEN;
       delete configEnv.CLIENT_ID;
@@ -3640,8 +3645,8 @@ async function start() {
       delete configEnv.OWNER_IDS;
       delete configEnv.REQUIRED_SERVER_IDS;
       delete configEnv.REQUIRED_SERVER_INVITES;
-      if (process.env.CONFIG_BOT_TOKEN) configEnv.DISCORD_TOKEN = process.env.CONFIG_BOT_TOKEN;
-      if (process.env.CONFIG_BOT_CLIENT_ID) configEnv.CLIENT_ID = process.env.CONFIG_BOT_CLIENT_ID;
+      if (configBotToken) configEnv.DISCORD_TOKEN = configBotToken;
+      if (configBotClientId) configEnv.CLIENT_ID = configBotClientId;
       if (process.env.CONFIG_BOT_GUILD_ID) configEnv.GUILD_ID = process.env.CONFIG_BOT_GUILD_ID;
       if (process.env.CONFIG_BOT_OWNER_IDS) configEnv.OWNER_IDS = process.env.CONFIG_BOT_OWNER_IDS;
       if (process.env.CONFIG_BOT_REQUIRED_SERVER_IDS) configEnv.REQUIRED_SERVER_IDS = process.env.CONFIG_BOT_REQUIRED_SERVER_IDS;
@@ -3649,7 +3654,7 @@ async function start() {
       const configBot = spawn(process.execPath, [configBotEntry], { cwd: configBotDirectory, env: configEnv, stdio: 'inherit' });
       configBot.on('exit', (code) => console.error(`Config library bot process exited with code ${code}.`));
       console.log('Config library bot process started.');
-    } else console.log('Config library bot was not started: configure CONFIG_BOT_TOKEN or config-library-bot/.env.');
+    } else console.log('Config library bot was not started: configure CONFIG_BOT_TOKEN and CONFIG_CLENT_ID, or config-library-bot/.env.');
   }
 }
 start().catch((error) => {
