@@ -3542,7 +3542,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
       else if (interaction.commandName === 'anti-nuke') await handleAntiNukeCommand(interaction);
-      else if (interaction.commandName === 'serverinfo' || interaction.commandName === 'member-count') await handleLegacyModerationCommand(interaction);
+      else if (interaction.commandName === 'serverinfo' || interaction.commandName === 'member-count') await handleModerationCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'commands') await handleCommandsHelp(interaction);
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
