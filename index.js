@@ -89,6 +89,7 @@ const dataFile = join(process.cwd(), 'data', 'guild-config.json');
 const timers = new Map();
 const pendingDuels = new Map();
 const antiNukeHits = new Map();
+const uwuWebhookCache = new Map();
 let guildConfigurations = {};
 let messageSaveTimer = null;
 
@@ -410,6 +411,7 @@ const commands = [
   new SlashCommandBuilder().setName('maintenance-lock').setDescription('Administrator: lock a category to one maintenance role.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to lock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)).addRoleOption((o) => o.setName('role').setDescription('Only this role can see the category').setRequired(true)),
   new SlashCommandBuilder().setName('maintenance-unlock').setDescription('Administrator: remove maintenance visibility restrictions.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addChannelOption((o) => o.setName('category').setDescription('Category to unlock').addChannelTypes(ChannelType.GuildCategory).setRequired(true)),
   new SlashCommandBuilder().setName('anti-nuke').setDescription('Configure light anti-nuke burst alerts.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addBooleanOption((o) => o.setName('enabled').setDescription('Turn anti-nuke monitoring on or off')).addChannelOption((o) => textChannelOption(o.setName('log-channel').setDescription('Where alerts should be sent'))).addStringOption((o) => o.setName('action').setDescription('What to do when a burst is detected').addChoices({ name: 'Alert only', value: 'alert' }, { name: 'Alert + timeout', value: 'timeout' })).addIntegerOption((o) => o.setName('threshold').setDescription('Actions before alerting, default 5').setMinValue(3).setMaxValue(20)).addIntegerOption((o) => o.setName('window-seconds').setDescription('Time window, default 60 seconds').setMinValue(30).setMaxValue(300)).addIntegerOption((o) => o.setName('timeout-minutes').setDescription('Timeout length for timeout mode').setMinValue(1).setMaxValue(60)).addUserOption((o) => o.setName('ignore-user').setDescription('Trusted user to ignore')).addBooleanOption((o) => o.setName('remove-ignore').setDescription('Remove ignore-user from trusted ignore list')),
+  new SlashCommandBuilder().setName('uwu-lock').setDescription('Admin: toggle uwu webhook mode for a member.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addUserOption((o) => o.setName('user').setDescription('Member to uwu-lock').setRequired(true)).addBooleanOption((o) => o.setName('enabled').setDescription('Set on/off; leave blank to toggle')),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Show detailed server info, images, boosts, emojis, and member counts.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('member-count').setDescription('Show server member, human, and bot counts.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
@@ -1070,6 +1072,60 @@ function commandSearchEmbed(query, category, prefix = '/') {
     .setDescription(lines.join('\n\n') || 'No commands matched that search.')
     .setFooter({ text: prefix === '/' ? 'Required arguments are marked with *.' : `Required arguments are marked with *. Quotes work for spaces, for example: ${prefix}say --message "Hello world".` })
     .setTimestamp();
+}
+
+function uwuText(content) {
+  return content.split(/(```[\s\S]*?```|`[^`]*`|https?:\/\/\S+)/g).map((part) => {
+    if (/^(`|https?:\/\/)/.test(part)) return part;
+    return part
+      .replace(/[rl]/g, 'w')
+      .replace(/[RL]/g, 'W')
+      .replace(/n([aeiou])/g, 'ny$1')
+      .replace(/N([aeiouAEIOU])/g, 'Ny$1')
+      .replace(/ove/g, 'uv');
+  }).join('');
+}
+
+async function handleUwuLockCommand(interaction) {
+  requireAdminServer(interaction);
+  const user = interaction.options.getUser('user', true);
+  if (user.bot) throw new Error('Bots cannot be uwu-locked.');
+  const config = ensureConfiguration(interaction.guildId);
+  config.uwuLockedUsers ||= {};
+  const selected = interaction.options.getBoolean('enabled');
+  const enabled = selected ?? !config.uwuLockedUsers[user.id];
+  if (enabled) config.uwuLockedUsers[user.id] = { lockedBy: interaction.user.id, lockedAt: Date.now() };
+  else delete config.uwuLockedUsers[user.id];
+  await saveConfigurations();
+  return replyPrivately(interaction, `${user} is now **${enabled ? 'uwu-locked' : 'unlocked'}**.`, 'success');
+}
+
+async function uwuWebhookFor(channel) {
+  const baseChannel = channel.isThread?.() ? channel.parent : channel;
+  if (!baseChannel?.fetchWebhooks || !baseChannel?.createWebhook) throw new Error('Uwu lock only works in text channels and threads.');
+  const cached = uwuWebhookCache.get(baseChannel.id);
+  if (cached) return { webhook: cached, threadId: channel.isThread?.() ? channel.id : undefined };
+  const hooks = await baseChannel.fetchWebhooks();
+  const webhook = hooks.find((hook) => hook.owner?.id === client.user.id && hook.name === 'CU Uwu Relay')
+    || await baseChannel.createWebhook({ name: 'CU Uwu Relay', reason: 'Uwu lock message relay' });
+  uwuWebhookCache.set(baseChannel.id, webhook);
+  return { webhook, threadId: channel.isThread?.() ? channel.id : undefined };
+}
+
+async function relayUwuLockedMessage(message) {
+  if (!message.deletable) throw new Error('I need Manage Messages before I can use uwu lock here.');
+  const { webhook, threadId } = await uwuWebhookFor(message.channel);
+  const attachmentLinks = [...message.attachments.values()].map((attachment) => attachment.url);
+  const transformed = uwuText(message.content);
+  const content = [transformed, ...attachmentLinks].filter(Boolean).join('\n').slice(0, 2000) || '*uwu*';
+  await webhook.send({
+    content,
+    username: message.member?.displayName || message.author.username,
+    avatarURL: message.author.displayAvatarURL({ size: 256 }),
+    threadId,
+    allowedMentions: { parse: [], repliedUser: false },
+  });
+  await message.delete();
 }
 
 async function handleCommandSearch(interaction) {
@@ -3669,7 +3725,7 @@ async function registerGuildCommands(guildId) {
     ...(commandGroups.economy || []),
   ]);
   const prioritySlashCommands = new Set([
-    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'mute', 'unmute', 'timeout', 'untimeout',
+    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'mute', 'unmute', 'timeout', 'untimeout', 'uwu-lock',
     'library', 'config-library', 'config-library-add', 'config-library-edit',
     'config-library-remove', 'config-library-settings', 'library-db-copy', 'library-db-paste',
   ]);
@@ -3722,11 +3778,16 @@ client.on('messageCreate', async (message) => {
   await trackServerMessage(message);
   if (message.author.bot || !message.guild) return;
   const prefix = ensureConfiguration(message.guild.id).prefix || '!';
-  if (!message.content.startsWith(prefix)) return;
-  const body = message.content.slice(prefix.length).trim();
-  const [name] = body.split(/\s+/);
-  const argumentText = body.slice(name?.length || 0).trim();
-  await handlePrefixMessageCommand(message, prefix, name, argumentText);
+  if (message.content.startsWith(prefix)) {
+    const body = message.content.slice(prefix.length).trim();
+    const [name] = body.split(/\s+/);
+    const argumentText = body.slice(name?.length || 0).trim();
+    await handlePrefixMessageCommand(message, prefix, name, argumentText);
+    return;
+  }
+  if (configuration(message.guild.id)?.uwuLockedUsers?.[message.author.id]) {
+    await relayUwuLockedMessage(message).catch((error) => sendPrefixPrivate(message, `I could not relay your uwu-locked message: ${error.message}`).catch(() => undefined));
+  }
 });
 client.on('channelCreate', (channel) => {
   const muteRoleId = channel.guild ? configuration(channel.guild.id)?.moderationMuteRoleId : null;
@@ -3763,6 +3824,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'global-blacklist') await handleGlobalBlacklistCommand(interaction);
       else if (interaction.commandName === 'global-whitelist') await handleGlobalWhitelistCommand(interaction);
       else if (interaction.commandName === 'anti-nuke') await handleAntiNukeCommand(interaction);
+      else if (interaction.commandName === 'uwu-lock') await handleUwuLockCommand(interaction);
       else if (interaction.commandName === 'serverinfo' || interaction.commandName === 'member-count') await handleModerationCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'commands') await handleCommandsHelp(interaction);
