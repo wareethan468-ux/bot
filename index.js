@@ -3456,7 +3456,12 @@ async function registerGuildCommands(guildId) {
     ...organizedModerationCommandNames,
     ...(commandGroups.economy || []),
   ]);
-  const registeredCommands = commands.filter((command) => !hiddenFromSlash.has(command.name)).slice(0, 100);
+  const prioritySlashCommands = new Set(['serverinfo', 'member-count', 'panel-ids', 'config-panel-ids', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy']);
+  const availableCommands = commands.filter((command) => !hiddenFromSlash.has(command.name));
+  const registeredCommands = [
+    ...availableCommands.filter((command) => prioritySlashCommands.has(command.name)),
+    ...availableCommands.filter((command) => !prioritySlashCommands.has(command.name)),
+  ].slice(0, 100);
   await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: registeredCommands.map((command) => command.toJSON ? command.toJSON() : command) });
   console.log(`Registered commands for server ${guildId}.`);
 }
