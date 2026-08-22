@@ -149,6 +149,7 @@ function addConfigPanelOptions(command, { channel = false, tierRequired = false 
 const commands = [
   new SlashCommandBuilder().setName('help').setDescription('Show the bot commands.').addStringOption((o) => o.setName('category').setDescription('Focus the help embed').addChoices({ name: 'All', value: 'all' }, { name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('commands').setDescription('Search commands and show their arguments and descriptions.').addStringOption((o) => o.setName('search').setDescription('Optional command name or keyword').setMaxLength(50)),
+  new SlashCommandBuilder().setName('prefix').setDescription('View or change the server prefix.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('value').setDescription('New prefix, such as ! or ?').setMinLength(1).setMaxLength(5)),
   new SlashCommandBuilder().setName('server-copy').setDescription('Administrator: create a reusable server template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
   new SlashCommandBuilder().setName('server-paste').setDescription('Administrator: recreate a copied server template here.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addStringOption((o) => o.setName('code').setDescription('Template code from /server-copy').setRequired(true).setMaxLength(30)),
   new SlashCommandBuilder().setName('server-config-copy').setDescription('Administrator: copy ticket and bot configuration into a template code.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
@@ -412,7 +413,7 @@ const commands = [
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
   new SlashCommandBuilder().setName('global-blacklist').setDescription('Owner only: manage global bot blacklists.').addStringOption((o) => o.setName('type').setDescription('Blacklist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID').setRequired(true)).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' })),
   new SlashCommandBuilder().setName('global-whitelist').setDescription('Owner only: manage global approved users or servers.').addStringOption((o) => o.setName('type').setDescription('Whitelist type').setRequired(true).addChoices({ name: 'User', value: 'user' }, { name: 'Server', value: 'server' })).addStringOption((o) => o.setName('action').setDescription('Action').setRequired(true).addChoices({ name: 'Add', value: 'add' }, { name: 'Remove', value: 'remove' }, { name: 'List', value: 'list' })).addStringOption((o) => o.setName('target-id').setDescription('User ID or server ID')),
-  new SlashCommandBuilder().setName('command-search').setDescription('Owner only: search registered bot commands.').addStringOption((o) => o.setName('query').setDescription('Search text').setRequired(true).setMaxLength(50)).addStringOption((o) => o.setName('category').setDescription('Optional command category').addChoices({ name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
+  new SlashCommandBuilder().setName('command-search').setDescription('Search bot commands by name, keyword, or category.').addStringOption((o) => o.setName('query').setDescription('Optional search text').setMaxLength(50)).addStringOption((o) => o.setName('category').setDescription('Optional command category').addChoices({ name: 'Giveaways', value: 'giveaways' }, { name: 'Tickets', value: 'tickets' }, { name: 'Economy', value: 'economy' }, { name: 'Moderation', value: 'moderation' }, { name: 'Library', value: 'library' })),
   new SlashCommandBuilder().setName('reaction-reward').setDescription('Create a reaction reward on a message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)).addStringOption((o) => o.setName('emoji').setDescription('Emoji to react with, such as 🎁').setRequired(true).setMaxLength(100)).addStringOption((o) => o.setName('reward-text').setDescription('Text sent by DM').setMaxLength(4000)).addAttachmentOption((o) => o.setName('reward-file').setDescription('File sent by DM')).addStringOption((o) => o.setName('file-type').setDescription('File extension, such as lua or txt').setMaxLength(10)),
   new SlashCommandBuilder().setName('reaction-reward-remove').setDescription('Remove a reaction reward.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Message channel').setRequired(true))).addStringOption((o) => o.setName('message-id').setDescription('Message ID').setRequired(true)),
   new SlashCommandBuilder().setName('config-library-add').setDescription('Admin: add a configuration/library entry.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Entry name').setRequired(true).setMaxLength(80)).addStringOption((o) => o.setName('description').setDescription('Entry description').setMaxLength(1000)).addStringOption((o) => o.setName('text').setDescription('Optional text (use files for large content)').setMaxLength(4000)).addAttachmentOption((o) => o.setName('file1').setDescription('First file')).addAttachmentOption((o) => o.setName('file2').setDescription('Second file')).addAttachmentOption((o) => o.setName('file3').setDescription('Third file')).addAttachmentOption((o) => o.setName('file4').setDescription('Fourth file')).addAttachmentOption((o) => o.setName('file5').setDescription('Fifth file')).addAttachmentOption((o) => o.setName('file6').setDescription('Sixth file')).addAttachmentOption((o) => o.setName('file7').setDescription('Seventh file')).addAttachmentOption((o) => o.setName('file8').setDescription('Eighth file')).addAttachmentOption((o) => o.setName('file9').setDescription('Ninth file')).addAttachmentOption((o) => o.setName('file10').setDescription('Tenth file')).addStringOption((o) => o.setName('file-type').setDescription('Extension for text, such as lua or txt').setMaxLength(10)).addStringOption((o) => o.setName('tier').setDescription('Free or buyer-only').addChoices({ name: 'Free', value: 'free' }, { name: 'Buyer', value: 'buyer' })).addIntegerOption((o) => o.setName('price').setDescription('CU coin price for buyer entries').setMinValue(0).setMaxValue(1000000000)).addStringOption((o) => o.setName('panel-name').setDescription('Optional reusable panel database name').setMaxLength(30)),
@@ -1050,23 +1051,87 @@ async function handleGlobalWhitelistCommand(interaction) {
   return replyPrivately(interaction, `${type === 'user' ? 'User' : 'Server'} ID \`${targetId}\` was ${action === 'add' ? 'added to' : 'removed from'} the global whitelist.`, 'success');
 }
 
-async function handleCommandSearch(interaction) {
-  requireBotOwner(interaction);
-  const query = interaction.options.getString('query', true).toLowerCase();
-  const category = interaction.options.getString('category');
+function commandSearchEmbed(query, category, prefix = '/') {
   const categoryNames = category === 'moderation' ? [...organizedModerationCommandNames] : category && commandGroups[category] ? commandGroups[category] : null;
-  const names = commands.map((command) => command.name).filter((name) => name.includes(query) && (!categoryNames || (categoryNames instanceof Set ? categoryNames.has(name) : categoryNames.includes(name))));
-  return replyPrivately(interaction, names.length ? `🔎 Commands matching **${query}**:\n\n${names.map((name) => `\`/${name}\``).join('\n')}` : 'No commands matched that search.', 'info');
+  const cleanedQuery = query?.toLowerCase().trim();
+  const matches = commands
+    .filter((command) => !categoryNames || categoryNames.includes(command.name))
+    .filter((command) => !cleanedQuery || command.name.includes(cleanedQuery) || command.description?.toLowerCase().includes(cleanedQuery))
+    .slice(0, 20);
+  const lines = matches.map((command) => {
+    const options = (command.options || []).map((option) => '`' + option.name + (option.required ? '*' : '') + '`').join(' ');
+    return `**${prefix}${command.name}${options ? ` ${options}` : ''}**\n${command.description || 'No description.'}`;
+  });
+  return new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('Command Search')
+    .setDescription(lines.join('\n\n') || 'No commands matched that search.')
+    .setFooter({ text: 'Required arguments are marked with *.' })
+    .setTimestamp();
+}
+
+async function handleCommandSearch(interaction) {
+  const query = interaction.options.getString('query');
+  const category = interaction.options.getString('category');
+  return interaction.reply({ embeds: [commandSearchEmbed(query, category)], flags: MessageFlags.Ephemeral });
 }
 
 async function handleCommandsHelp(interaction) {
   const query = interaction.options.getString('search')?.toLowerCase().trim();
-  const list = commands.filter((command) => !query || command.name.includes(query) || command.description?.toLowerCase().includes(query)).slice(0, 15);
-  const text = list.map((command) => {
-    const options = (command.options || []).map((option) => '`' + option.name + (option.required ? '*' : '') + '`').join(' ');
-    return `**/${command.name} ${options}**\n${command.description || 'No description.'}`;
-  }).join('\n\n');
-  return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📖 Command Search').setDescription(text || 'No commands matched your search.').setFooter({ text: 'Required arguments are marked with *.' })], flags: MessageFlags.Ephemeral });
+  return interaction.reply({ embeds: [commandSearchEmbed(query, null)], flags: MessageFlags.Ephemeral });
+}
+
+async function handlePrefixCommand(interaction) {
+  requireAdminServer(interaction);
+  const config = ensureConfiguration(interaction.guildId);
+  const value = interaction.options.getString('value')?.trim();
+  if (!value) return replyPrivately(interaction, `Current server prefix: \`${config.prefix || '!'}\``, 'info');
+  if (/\s/.test(value)) throw new Error('Prefix cannot contain spaces.');
+  config.prefix = value;
+  await saveConfigurations();
+  return replyPrivately(interaction, `Server prefix changed to \`${value}\`.`, 'success');
+}
+
+async function handlePrefixMessageCommand(message, prefix, name, args) {
+  const commandName = name?.toLowerCase();
+  const config = ensureConfiguration(message.guild.id);
+  if (commandName === 'leave') {
+    if (!BOT_OWNER_IDS.has(message.author.id)) return;
+    const guildId = args[0];
+    if (!/^\d{17,20}$/.test(guildId || '')) return message.reply(`Usage: \`${prefix}leave <server_id>\``);
+    const targetGuild = client.guilds.cache.get(guildId);
+    if (!targetGuild) return message.reply('I am not in that server.');
+    await targetGuild.leave();
+    return message.reply('Left **' + targetGuild.name + '** (`' + guildId + '`).');
+  }
+  if (commandName === 'help' || commandName === 'commands') {
+    const query = args.join(' ').trim();
+    return message.reply({ embeds: [query ? commandSearchEmbed(query, null, prefix) : new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Prefix Commands').setDescription(`Prefix: \`${prefix}\`\n\n\`${prefix}commands [search]\`\n\`${prefix}command-search [search]\`\n\`${prefix}serverinfo\`\n\`${prefix}member-count\`\n\`${prefix}panel-ids\`\n\`${prefix}prefix [new prefix]\``).setFooter({ text: 'Slash commands are still fully supported.' })] });
+  }
+  if (commandName === 'command-search' || commandName === 'search') {
+    return message.reply({ embeds: [commandSearchEmbed(args.join(' ').trim(), null, prefix)] });
+  }
+  if (commandName === 'prefix') {
+    if (!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return message.reply('You need Manage Server to change the prefix.');
+    const nextPrefix = args[0]?.trim();
+    if (!nextPrefix) return message.reply(`Current server prefix: \`${config.prefix || '!'}\``);
+    if (nextPrefix.length > 5 || /\s/.test(nextPrefix)) return message.reply('Prefix must be 1-5 characters and cannot contain spaces.');
+    config.prefix = nextPrefix;
+    await saveConfigurations();
+    return message.reply(`Server prefix changed to \`${nextPrefix}\`.`);
+  }
+  if (commandName === 'serverinfo') return message.reply({ embeds: [await serverInfoEmbed(message.guild)] });
+  if (commandName === 'member-count') {
+    const stats = await serverMemberStats(message.guild);
+    return message.reply(`**${message.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`);
+  }
+  if (commandName === 'panel-ids' || commandName === 'config-panel-ids') {
+    const panels = Object.entries(config.libraries || {});
+    if (!panels.length) return message.reply('No saved config panels yet.');
+    const lines = panels.map(([panelId, item]) => `**${item.panel?.name || panelId.replace(/^named-/, '')}** — \`${panelId}\` (${(item.entries || []).length} entries)`);
+    return message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('Saved Panel IDs').setDescription(lines.join('\n').slice(0, 3900)).setTimestamp()] });
+  }
+  return message.reply(`Unknown prefix command. Try \`${prefix}commands ${commandName || ''}\` or use slash commands.`);
 }
 
 async function handleApprovalButton(interaction) {
@@ -3456,7 +3521,7 @@ async function registerGuildCommands(guildId) {
     ...organizedModerationCommandNames,
     ...(commandGroups.economy || []),
   ]);
-  const prioritySlashCommands = new Set(['serverinfo', 'member-count', 'panel-ids', 'config-panel-ids', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy']);
+  const prioritySlashCommands = new Set(['prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'panel-ids', 'config-panel-ids', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy']);
   const availableCommands = commands.filter((command) => !hiddenFromSlash.has(command.name));
   const registeredCommands = [
     ...availableCommands.filter((command) => prioritySlashCommands.has(command.name)),
@@ -3504,18 +3569,7 @@ client.on('messageCreate', async (message) => {
   if (!message.content.startsWith(prefix)) return;
   const [name] = message.content.slice(prefix.length).trim().split(/\s+/);
   const args = message.content.slice(prefix.length).trim().split(/\s+/).slice(1);
-  if (name?.toLowerCase() === 'leave') {
-    if (!BOT_OWNER_IDS.has(message.author.id)) return;
-    const guildId = args[0];
-    if (!/^\d{17,20}$/.test(guildId || '')) return message.reply('Usage: `!leave <server_id>`');
-    const targetGuild = client.guilds.cache.get(guildId);
-    if (!targetGuild) return message.reply('I am not in that server.');
-    await targetGuild.leave();
-    return message.reply('Left **' + targetGuild.name + '** (`' + guildId + '`).');
-  }
-  if (name?.toLowerCase() === 'help' || name?.toLowerCase() === 'commands') {
-    await message.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Commands').setDescription(`Use slash commands for setup and panels. Prefix: \`${prefix}\`\n\n\`${prefix}help\` — show this guide\n\`${prefix}commands\` — show this guide`).setFooter({ text: 'Use /help for the full command list.' })] });
-  }
+  await handlePrefixMessageCommand(message, prefix, name, args);
 });
 client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reaction, user).catch((error) => console.error('Reaction reward failed:', error)));
 
@@ -3529,6 +3583,7 @@ client.on('interactionCreate', async (interaction) => {
     }
     if (interaction.isChatInputCommand()) {
       if (interaction.commandName === 'help') await interaction.reply({ ...helpMessage(interaction.options.getString('category') || 'all'), flags: MessageFlags.Ephemeral });
+      else if (interaction.commandName === 'prefix') await handlePrefixCommand(interaction);
       else if (interaction.commandName === 'setup-verification') await handleSetup(interaction);
       else if (interaction.commandName === 'customize-verification') await handleCustomize(interaction);
       else if (interaction.commandName === 'verification-panel') await handlePanel(interaction);
