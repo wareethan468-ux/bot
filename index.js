@@ -8,6 +8,7 @@ import { commandGroups } from './commands/groups.js';
 
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import {
@@ -59,6 +60,8 @@ const LIBRARY_STAFF_ADD_MODAL_ID = 'library:staff-add-modal';
 const LIBRARY_STAFF_BULK_MODAL_ID = 'library:staff-bulk-modal';
 const LIBRARY_STAFF_REMOVE_MODAL_ID = 'library:staff-remove-modal';
 const LIBRARY_STAFF_EDIT_MODAL_ID = 'library:staff-edit-modal';
+const LIBRARY_STAFF_ADD_FORM_PREFIX = 'library:staff-add-form:';
+const LIBRARY_STAFF_BULK_FORM_PREFIX = 'library:staff-bulk-form:';
 const TICKET_BUTTON_PREFIX = 'ticket:create:';
 const RIVALS_SIGNUP_BUTTON_ID = 'ticket:rivals-signup';
 const TICKET_CLOSE_BUTTON_ID = 'ticket:close';
@@ -117,6 +120,7 @@ const legacyModerationCommands = [
   new SlashCommandBuilder().setName('roleinfo').setDescription('Show role information.').setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles).addRoleOption((o) => o.setName('role').setDescription('Role').setRequired(true)),
   new SlashCommandBuilder().setName('userinfo').setDescription('Show member information.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Show server information.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  new SlashCommandBuilder().setName('member-count').setDescription('Show server member, human, and bot counts.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('announce').setDescription('Send a mod announcement embed.').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addStringOption((o) => o.setName('title').setDescription('Title').setRequired(true).setMaxLength(256)).addStringOption((o) => o.setName('message').setDescription('Announcement').setRequired(true).setMaxLength(4000)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Target channel'))),
   new SlashCommandBuilder().setName('say').setDescription('Send a plain staff message.').setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages).addStringOption((o) => o.setName('message').setDescription('Message').setRequired(true).setMaxLength(2000)).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Target channel'))),
   new SlashCommandBuilder().setName('hide').setDescription('Hide a channel from everyone.').setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels).addChannelOption((o) => textChannelOption(o.setName('channel').setDescription('Target channel'))),
@@ -415,6 +419,7 @@ const commands = [
   addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel').setDescription('Admin: create a reusable config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { tierRequired: true }),
   addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel-edit').setDescription('Admin: edit a saved config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)),
   new SlashCommandBuilder().setName('config-panel-remove').setDescription('Admin: remove a saved config panel database.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addStringOption((o) => o.setName('name').setDescription('Reusable config panel name').setRequired(true).setMaxLength(30)),
+  new SlashCommandBuilder().setName('panel-ids').setDescription('Admin: list all saved panel names and internal IDs.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   addConfigPanelOptions(new SlashCommandBuilder().setName('config-panel-deploy').setDescription('Admin: create/update and deploy a reusable config panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { channel: true, tierRequired: true }),
   addConfigPanelOptions(new SlashCommandBuilder().setName('library-panel').setDescription('Admin: create a reusable config panel without deploying it.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { tierRequired: true }),
   addConfigPanelOptions(new SlashCommandBuilder().setName('library-panel-deploy').setDescription('Admin: create/update and deploy a reusable config panel.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild), { channel: true, tierRequired: true }),
@@ -1860,6 +1865,56 @@ function requireModerationPermission(interaction, permission) {
   if (!interaction.memberPermissions?.has(permission)) throw new Error('You do not have permission to use this moderation command.');
 }
 
+async function serverMemberStats(guild) {
+  let members = guild.members.cache;
+  if (members.size < guild.memberCount) {
+    members = await guild.members.fetch().catch(() => guild.members.cache);
+  }
+  const bots = members.filter((member) => member.user.bot).size;
+  const humans = members.size ? members.size - bots : null;
+  return { total: guild.memberCount, cached: members.size, humans, bots: members.size ? bots : null };
+}
+
+function channelTypeStats(guild) {
+  const channels = guild.channels.cache;
+  return {
+    total: channels.size,
+    text: channels.filter((channel) => channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildAnnouncement).size,
+    voice: channels.filter((channel) => channel.type === ChannelType.GuildVoice || channel.type === ChannelType.GuildStageVoice).size,
+    categories: channels.filter((channel) => channel.type === ChannelType.GuildCategory).size,
+  };
+}
+
+async function serverInfoEmbed(guild) {
+  const owner = await guild.fetchOwner().catch(() => null);
+  const memberStats = await serverMemberStats(guild);
+  const channels = channelTypeStats(guild);
+  const icon = guild.iconURL({ size: 1024 });
+  const banner = guild.bannerURL({ size: 1024 });
+  const splash = guild.splashURL({ size: 1024 });
+  const links = [
+    icon ? `[Icon](${icon})` : null,
+    banner ? `[Banner](${banner})` : null,
+    splash ? `[Splash](${splash})` : null,
+  ].filter(Boolean).join(' | ') || 'No server images set.';
+  return new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle(guild.name)
+    .setThumbnail(icon)
+    .setDescription(guild.description || 'Server information')
+    .addFields(
+      { name: 'Members', value: `Total: **${memberStats.total.toLocaleString()}**\nHumans: **${memberStats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${memberStats.bots?.toLocaleString() || 'Unknown'}**`, inline: true },
+      { name: 'Server', value: `ID: \`${guild.id}\`\nOwner: ${owner ? `${owner.user.tag}` : 'Unknown'}\nCreated: <t:${Math.floor(guild.createdTimestamp / 1000)}:F>`, inline: true },
+      { name: 'Boosts', value: `Level: **${guild.premiumTier || 0}**\nBoosts: **${guild.premiumSubscriptionCount || 0}**`, inline: true },
+      { name: 'Channels', value: `Total: **${channels.total}**\nText: **${channels.text}**\nVoice: **${channels.voice}**\nCategories: **${channels.categories}**`, inline: true },
+      { name: 'Assets', value: `Emojis: **${guild.emojis.cache.size}**\nStickers: **${guild.stickers.cache.size}**\nRoles: **${guild.roles.cache.size}**`, inline: true },
+      { name: 'Image Links', value: links, inline: false },
+      { name: 'Features', value: guild.features.length ? guild.features.slice(0, 12).map((feature) => feature.toLowerCase().replace(/_/g, ' ')).join(', ') : 'None listed', inline: false },
+    )
+    .setImage(banner || null)
+    .setTimestamp();
+}
+
 async function moderationMember(interaction) {
   const member = await interaction.guild.members.fetch(interaction.options.getUser('user', true).id);
   const bot = await interaction.guild.members.fetchMe();
@@ -1985,7 +2040,12 @@ async function handleModerationCommand(interaction) {
   }
   if (name === 'serverinfo') {
     requireModerationPermission(interaction, PermissionFlagsBits.ManageGuild);
-    return replyPrivately(interaction, `**${interaction.guild.name}**\nMembers: **${interaction.guild.memberCount}**\nChannels: **${interaction.guild.channels.cache.size}**\nRoles: **${interaction.guild.roles.cache.size}**`, 'info');
+    return interaction.reply({ embeds: [await serverInfoEmbed(interaction.guild)], flags: MessageFlags.Ephemeral });
+  }
+  if (name === 'member-count') {
+    requireModerationPermission(interaction, PermissionFlagsBits.ManageGuild);
+    const stats = await serverMemberStats(interaction.guild);
+    return replyPrivately(interaction, `**${interaction.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`, 'info');
   }
   if (name === 'announce') {
     requireModerationPermission(interaction, PermissionFlagsBits.ManageMessages);
@@ -2972,8 +3032,38 @@ async function handleLibraryStaffButton(interaction) {
   const action = actionAndTier[0];
   const tier = actionAndTier[1];
   const panelId = actionAndTier[2] || interaction.message.id;
-  if (action === 'add') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}:${panelId}`).setTitle('Add Config To This Panel').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Config name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description').setStyle(TextInputStyle.Paragraph).setRequired(false)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text').setStyle(TextInputStyle.Paragraph).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price (0 for free)').setStyle(TextInputStyle.Short).setRequired(false))));
-  if (action === 'bulk') return replyPrivately(interaction, '📚 **Bulk library setup**\n\nUse `/config-library-add` for each entry. Upload up to 10 files per entry using file1-file10; large configs should be uploaded as files instead of pasted into chat.', 'info');
+  if (action === 'add') {
+    const panelLabel = panelId === 'legacy' ? 'global panel' : panelId.replace(/^named-/, '');
+    const tierLabel = tier === 'both' ? 'free' : tier;
+    const fileCmd = `/config-library-add name:YourName tier:${tierLabel}${panelId === 'legacy' ? '' : ` panel-name:${panelId.replace(/^named-/, '')}`} file1:<attach file>`;
+    const addEmbed = new EmbedBuilder()
+      .setColor(tier === 'buyer' ? 0xf1c40f : 0x57f287)
+      .setTitle('➕ Add Entry to Panel')
+      .setDescription(`Add a new config entry to **${panelLabel}** (${tierLabel} tier).`)
+      .addFields(
+        { name: '✏️ Quick Text Add', value: 'Click **Fill Form** below to enter name, description, and text. Great for short configs.', inline: false },
+        { name: '📎 Add with Files (up to 10 files)', value: `To attach files, use this slash command instead:\n\`\`\`\n${fileCmd}\n\`\`\``, inline: false },
+      )
+      .setFooter({ text: 'Files must be attached via slash command — the form below supports text only.' })
+      .setTimestamp();
+    return interaction.reply({ embeds: [addEmbed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_ADD_FORM_PREFIX}${tier}:${panelId}`).setLabel('Fill Form (Text Only)').setEmoji('✏️').setStyle(ButtonStyle.Success))], flags: MessageFlags.Ephemeral });
+  }
+  if (action === 'bulk') {
+    const panelLabel = panelId === 'legacy' ? 'global panel' : panelId.replace(/^named-/, '');
+    const tierLabel = tier === 'both' ? 'free' : tier;
+    const bulkCmd = `/config-library-add name:YourName tier:${tierLabel}${panelId === 'legacy' ? '' : ` panel-name:${panelId.replace(/^named-/, '')}`} file1:<attach>`;
+    const bulkEmbed = new EmbedBuilder()
+      .setColor(0x3498db)
+      .setTitle('📚 Bulk Add Entries')
+      .setDescription(`Bulk-add entries to **${panelLabel}** (${tierLabel} tier).`)
+      .addFields(
+        { name: '📝 Bulk Text Form', value: 'Click **Open Bulk Form** to paste multiple entries at once.\nFormat per line: `name | price | config text`', inline: false },
+        { name: '📎 Bulk Add with Files', value: `To include files, run this slash command once per entry:\n\`\`\`\n${bulkCmd}\n\`\`\``, inline: false },
+      )
+      .setFooter({ text: 'Files can only be attached via slash command — the form supports text only.' })
+      .setTimestamp();
+    return interaction.reply({ embeds: [bulkEmbed], components: [new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId(`${LIBRARY_STAFF_BULK_FORM_PREFIX}${tier}:${panelId}`).setLabel('Open Bulk Form').setEmoji('📝').setStyle(ButtonStyle.Primary))], flags: MessageFlags.Ephemeral });
+  }
   const entries = (libraryFor(interaction.guildId, panelId) || ensureConfiguration(interaction.guildId).library).entries.filter((entry) => tier === 'both' || (entry.tier || 'free') === tier);
   if (action === 'edit') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_EDIT_MODAL_ID}:${tier}:${panelId}`).setTitle('Edit Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Existing entry name').setStyle(TextInputStyle.Short).setRequired(true)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('new-name').setLabel('New name (optional)').setStyle(TextInputStyle.Short)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Paragraph)), new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Text/config (optional)').setStyle(TextInputStyle.Paragraph))));
   if (action === 'remove') return interaction.showModal(new ModalBuilder().setCustomId(`${LIBRARY_STAFF_REMOVE_MODAL_ID}:${tier}:${panelId}`).setTitle('Remove Library Entry').addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Exact entry name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80))));
@@ -3014,17 +3104,18 @@ async function handleLibraryStaffModal(interaction) {
     const price = Number(interaction.fields.getTextInputValue('price') || 0);
     if (library.entries.some((entry) => entry.name.toLowerCase() === name.toLowerCase())) throw new Error('A config with that name already exists on this panel.');
     if (!Number.isInteger(price) || price < 0) throw new Error('Price must be a whole number of CU coins.');
-    library.entries.push({ name, description: interaction.fields.getTextInputValue('description') || null, text: interaction.fields.getTextInputValue('text'), fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
+    const entryText = interaction.fields.getTextInputValue('text')?.trim() || null;
+    library.entries.push({ name, description: interaction.fields.getTextInputValue('description') || null, text: entryText, fileType: 'txt', files: [], tier, price, createdAt: Date.now(), createdBy: interaction.user.id });
     await saveConfigurations();
-    return replyPrivately(interaction, `Added **${name}** to the ${tier} library.`, 'success');
+    return replyPrivately(interaction, `Added **${name}** to the ${tier} library.${!entryText ? ' Use \`/config-library-edit\` to attach files.' : ''}`, 'success');
   }
   if (interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID)) {
     const name = interaction.fields.getTextInputValue('name').trim();
     const before = library.entries.length;
     library.entries = library.entries.filter((entry) => entry.name.toLowerCase() !== name.toLowerCase());
-    if (before === library.entries.length) throw new Error('That library entry was not found.');
+    if (before === library.entries.length) throw new Error(`Entry "${name}" was not found. Check the exact name spelling.`);
     await saveConfigurations();
-    return replyPrivately(interaction, `Removed **${name}** from the library.`, 'success');
+    return replyPrivately(interaction, `✅ Removed **${name}** from the library.`, 'success');
   }
   const lines = interaction.fields.getTextInputValue('entries').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   let added = 0;
@@ -3039,9 +3130,60 @@ async function handleLibraryStaffModal(interaction) {
   return replyPrivately(interaction, `Added **${added}** ${tier} library entries.`, 'success');
 }
 
+async function handleLibraryStaffAddFormButton(interaction) {
+  requireLibraryStaff(interaction);
+  const parts = interaction.customId.slice(LIBRARY_STAFF_ADD_FORM_PREFIX.length).split(':');
+  const tier = parts[0];
+  const panelId = parts.slice(1).join(':') || 'legacy';
+  return interaction.showModal(
+    new ModalBuilder()
+      .setCustomId(`${LIBRARY_STAFF_ADD_MODAL_ID}:${tier}:${panelId}`)
+      .setTitle('Add Config Entry')
+      .addComponents(
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('name').setLabel('Config name').setStyle(TextInputStyle.Short).setRequired(true).setMaxLength(80)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('description').setLabel('Description (optional)').setStyle(TextInputStyle.Paragraph).setRequired(false)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('text').setLabel('Config text (blank = add files later)').setStyle(TextInputStyle.Paragraph).setRequired(false)),
+        new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('price').setLabel('Price (0 for free)').setStyle(TextInputStyle.Short).setRequired(false)),
+      ),
+  );
+}
+
+async function handleLibraryStaffBulkFormButton(interaction) {
+  requireLibraryStaff(interaction);
+  const parts = interaction.customId.slice(LIBRARY_STAFF_BULK_FORM_PREFIX.length).split(':');
+  const tier = parts[0];
+  const panelId = parts.slice(1).join(':') || 'legacy';
+  return interaction.showModal(
+    new ModalBuilder()
+      .setCustomId(`${LIBRARY_STAFF_BULK_MODAL_ID}:${tier}:${panelId}`)
+      .setTitle('Bulk Add Entries')
+      .addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('entries')
+            .setLabel('Entries (name | price | config text)')
+            .setStyle(TextInputStyle.Paragraph)
+            .setPlaceholder('MyScript | 0 | print("hello")\nOtherScript | 500 | local x = 1')
+            .setRequired(true),
+        ),
+      ),
+  );
+}
+
 async function handleLibraryAdminCommand(interaction) {
   requireAdminServer(interaction);
   const library = ensureConfiguration(interaction.guildId).library;
+  if (interaction.commandName === 'panel-ids') {
+    const config = ensureConfiguration(interaction.guildId);
+    const panels = Object.entries(config.libraries || {});
+    if (!panels.length) return replyPrivately(interaction, 'No saved panels yet. Create one with `/config-panel` or `/config-panel-deploy`.', 'info');
+    const lines = panels.map(([pid, item]) => {
+      const p = item.panel || {};
+      const deployed = p.channelId && p.messageId ? ` • deployed: <#${p.channelId}>` : ' • not deployed';
+      return `**${p.name || pid.replace(/^named-/, '')}**\nID: \`${pid}\` • tier: **${p.tier || 'free'}** • entries: **${(item.entries || []).length}**${deployed}`;
+    });
+    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Saved Panel IDs').setDescription(lines.join('\n\n').slice(0, 3900)).setFooter({ text: 'Use the ID with /config-panel-deploy name:<ID>' }).setTimestamp()], flags: MessageFlags.Ephemeral });
+  }
   if (interaction.commandName === 'library-db-copy') {
     const panelName = interaction.options.getString('name', true).trim();
     const panelId = namedLibraryKey(panelName);
@@ -3404,7 +3546,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'reaction-reward') await handleReactionRewardCommand(interaction);
       else if (interaction.commandName === 'reaction-reward-remove') await handleReactionRewardRemove(interaction);
       else if (interaction.commandName === 'library' || interaction.commandName === 'config-library') await handleLibraryCommand(interaction);
-      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy', 'library-panel', 'library-panel-deploy', 'library-db-copy', 'library-db-paste'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
+      else if (['config-library-add', 'config-library-edit', 'config-library-remove', 'config-library-settings', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'panel-ids', 'config-panel-deploy', 'library-panel', 'library-panel-deploy', 'library-db-copy', 'library-db-paste'].includes(interaction.commandName)) await handleLibraryAdminCommand(interaction);
       else if (interaction.commandName === 'giveaway-end') await handleGiveawayEnd(interaction);
       else if (interaction.commandName === 'giveaway-reroll') await handleGiveawayReroll(interaction);
       else if (interaction.commandName === 'setup-tickets') await handleSetupTickets(interaction);
@@ -3440,6 +3582,8 @@ client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_PANEL_PREFIX)) await handleLibraryPanelButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_GET_PREFIX)) await handleLibraryEntryButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_PREFIX)) await handleLibraryStaffButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_ADD_FORM_PREFIX)) await handleLibraryStaffAddFormButton(interaction);
+    if (interaction.isButton() && interaction.customId.startsWith(LIBRARY_STAFF_BULK_FORM_PREFIX)) await handleLibraryStaffBulkFormButton(interaction);
     if (interaction.isModalSubmit() && (interaction.customId.startsWith(LIBRARY_STAFF_ADD_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_BULK_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_REMOVE_MODAL_ID) || interaction.customId.startsWith(LIBRARY_STAFF_EDIT_MODAL_ID))) await handleLibraryStaffModal(interaction);
     if (interaction.isButton() && (interaction.customId.startsWith(REQUEST_APPROVE_PREFIX) || interaction.customId.startsWith(REQUEST_DENY_PREFIX) || interaction.customId.startsWith(REQUEST_LEAVE_PREFIX))) await handleApprovalButton(interaction);
     if (interaction.isButton() && interaction.customId.startsWith(TICKET_BUTTON_PREFIX)) await handleTicketButton(interaction);
@@ -3476,6 +3620,29 @@ async function start() {
     const secondary = spawn(process.execPath, [process.argv[1]], { env: childEnv, stdio: 'inherit' });
     secondary.on('exit', (code) => console.error(`Secondary bot process exited with code ${code}.`));
     console.log('Secondary bot process started.');
+  }
+  if (!process.env.BOT_SLOT && process.env.CONFIG_LIBRARY_CHILD !== '1' && process.env.DISABLE_CONFIG_LIBRARY_BOT !== 'true') {
+    const configBotDirectory = join(process.cwd(), 'config-library-bot');
+    const configBotEntry = join(configBotDirectory, 'index.js');
+    const hasConfigBotEnv = existsSync(join(configBotDirectory, '.env'));
+    if (existsSync(configBotEntry) && (hasConfigBotEnv || process.env.CONFIG_BOT_TOKEN?.trim())) {
+      const configEnv = { ...process.env, CONFIG_LIBRARY_CHILD: '1' };
+      delete configEnv.DISCORD_TOKEN;
+      delete configEnv.CLIENT_ID;
+      delete configEnv.GUILD_ID;
+      delete configEnv.OWNER_IDS;
+      delete configEnv.REQUIRED_SERVER_IDS;
+      delete configEnv.REQUIRED_SERVER_INVITES;
+      if (process.env.CONFIG_BOT_TOKEN) configEnv.DISCORD_TOKEN = process.env.CONFIG_BOT_TOKEN;
+      if (process.env.CONFIG_BOT_CLIENT_ID) configEnv.CLIENT_ID = process.env.CONFIG_BOT_CLIENT_ID;
+      if (process.env.CONFIG_BOT_GUILD_ID) configEnv.GUILD_ID = process.env.CONFIG_BOT_GUILD_ID;
+      if (process.env.CONFIG_BOT_OWNER_IDS) configEnv.OWNER_IDS = process.env.CONFIG_BOT_OWNER_IDS;
+      if (process.env.CONFIG_BOT_REQUIRED_SERVER_IDS) configEnv.REQUIRED_SERVER_IDS = process.env.CONFIG_BOT_REQUIRED_SERVER_IDS;
+      if (process.env.CONFIG_BOT_REQUIRED_SERVER_INVITES) configEnv.REQUIRED_SERVER_INVITES = process.env.CONFIG_BOT_REQUIRED_SERVER_INVITES;
+      const configBot = spawn(process.execPath, [configBotEntry], { cwd: configBotDirectory, env: configEnv, stdio: 'inherit' });
+      configBot.on('exit', (code) => console.error(`Config library bot process exited with code ${code}.`));
+      console.log('Config library bot process started.');
+    } else console.log('Config library bot was not started: configure CONFIG_BOT_TOKEN or config-library-bot/.env.');
   }
 }
 start().catch((error) => {
