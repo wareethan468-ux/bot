@@ -14,7 +14,7 @@ export const moderationCommands = [
   new SlashCommandBuilder().setName('unban').setDescription('Unban a user by ID.').setDefaultMemberPermissions(PermissionFlagsBits.BanMembers).addStringOption((o) => o.setName('user-id').setDescription('User ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
   new SlashCommandBuilder().setName('timeout').setDescription('Timeout a member.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addIntegerOption((o) => o.setName('minutes').setDescription('Duration in minutes').setRequired(true).setMinValue(1).setMaxValue(40320)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
   new SlashCommandBuilder().setName('untimeout').setDescription('Remove a member timeout.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
-  new SlashCommandBuilder().setName('mute').setDescription('Mute a member for seconds, minutes, hours, days, years, or forever.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addStringOption((o) => o.setName('duration').setDescription('Examples: 30s, 10m, 2h, 7d, 1y, forever/perm').setRequired(true).setMaxLength(30)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
+  new SlashCommandBuilder().setName('mute').setDescription('Mute a member for seconds, minutes, hours, days, years, or forever.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addStringOption((o) => o.setName('duration').setDescription('Amount, 30s/10m/1y, or perm').setRequired(true).setMaxLength(30)).addStringOption((o) => o.setName('unit').setDescription('Pick a unit when duration is only a number').addChoices({ name: 'Seconds', value: 'seconds' }, { name: 'Minutes', value: 'minutes' }, { name: 'Hours', value: 'hours' }, { name: 'Days', value: 'days' }, { name: 'Years', value: 'years' }, { name: 'Forever', value: 'forever' })).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
   new SlashCommandBuilder().setName('unmute').setDescription('Unmute a member.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setMaxLength(500)),
   new SlashCommandBuilder().setName('warn').setDescription('Warn a member.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Reason').setRequired(true).setMaxLength(500)),
   new SlashCommandBuilder().setName('warnings').setDescription('View a member warning history.').setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers).addUserOption((o) => o.setName('user').setDescription('Member').setRequired(true)),
@@ -44,8 +44,10 @@ export const moderationCommandNames = new Set(moderationCommands.map((command) =
 
 const MAX_TIMEOUT_MS = 28 * 24 * 60 * 60 * 1000;
 
-function parseMuteDuration(input) {
-  const value = String(input || '').trim().toLowerCase();
+function parseMuteDuration(input, selectedUnit) {
+  let value = String(input || '').trim().toLowerCase();
+  if (selectedUnit === 'forever') value = 'forever';
+  else if (selectedUnit && /^\d+(?:\.\d+)?$/.test(value)) value += ({ seconds: 's', minutes: 'm', hours: 'h', days: 'd', years: 'y' })[selectedUnit];
   if (['perm', 'permanent', 'forever'].includes(value)) return { milliseconds: null, label: 'forever' };
   const match = value.match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|second|seconds|m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|y|yr|yrs|year|years)$/);
   if (!match) throw new Error('Enter a duration such as `30s`, `10m`, `2h`, `7d`, `1y`, or `forever`. Prefix permanent mute: `mute @user perm`.');
@@ -58,6 +60,22 @@ function parseMuteDuration(input) {
   return { milliseconds, label: value };
 }
 
+const muteChannelDenials = {
+  ViewChannel: false,
+  SendMessages: false,
+  AddReactions: false,
+  Speak: false,
+  Connect: false,
+  SendMessagesInThreads: false,
+  CreatePublicThreads: false,
+  CreatePrivateThreads: false,
+};
+
+export async function applyMuteRoleToChannel(channel, roleId) {
+  if (!channel?.permissionOverwrites || !roleId) return;
+  await channel.permissionOverwrites.edit(roleId, muteChannelDenials, { reason: 'Block Muted role from channel access' });
+}
+
 async function mutedRole(guild, config) {
   let role = config.moderationMuteRoleId ? guild.roles.cache.get(config.moderationMuteRoleId) : null;
   if (!role) {
@@ -65,8 +83,7 @@ async function mutedRole(guild, config) {
       || await guild.roles.create({ name: 'Muted', permissions: [], reason: 'Permanent and long-duration mute support' });
     config.moderationMuteRoleId = role.id;
   }
-  const denied = { SendMessages: false, AddReactions: false, Speak: false, SendMessagesInThreads: false, CreatePublicThreads: false, CreatePrivateThreads: false };
-  await Promise.allSettled(guild.channels.cache.map((channel) => channel.permissionOverwrites?.edit(role, denied, { reason: 'Configure Muted role' })));
+  await Promise.allSettled(guild.channels.cache.map((channel) => applyMuteRoleToChannel(channel, role.id)));
   return role;
 }
 
@@ -119,7 +136,7 @@ export async function handleModerationCommand(interaction, tools) {
     requirePermission(PermissionFlagsBits.ModerateMembers); const target = await member();
     if (name === 'timeout') await target.timeout(interaction.options.getInteger('minutes', true) * 60_000, reason());
     else if (name === 'mute') {
-      const duration = parseMuteDuration(interaction.options.getString('duration', true));
+      const duration = parseMuteDuration(interaction.options.getString('duration', true), interaction.options.getString('unit'));
       if (duration.milliseconds !== null && duration.milliseconds <= MAX_TIMEOUT_MS) {
         await target.timeout(duration.milliseconds, reason());
       } else {

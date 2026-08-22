@@ -4,6 +4,7 @@ import {
   moderationCommandNames as organizedModerationCommandNames,
   handleModerationCommand as handleOrganizedModerationCommand,
   sweepExpiredMutes,
+  applyMuteRoleToChannel,
 } from './commands/moderation.js';
 import { commandGroups } from './commands/groups.js';
 
@@ -3726,6 +3727,10 @@ client.on('messageCreate', async (message) => {
   const [name] = body.split(/\s+/);
   const argumentText = body.slice(name?.length || 0).trim();
   await handlePrefixMessageCommand(message, prefix, name, argumentText);
+});
+client.on('channelCreate', (channel) => {
+  const muteRoleId = channel.guild ? configuration(channel.guild.id)?.moderationMuteRoleId : null;
+  if (muteRoleId) applyMuteRoleToChannel(channel, muteRoleId).catch((error) => console.error('Could not secure new channel for Muted role:', error));
 });
 client.on('messageReactionAdd', (reaction, user) => handleReactionRewardAdd(reaction, user).catch((error) => console.error('Reaction reward failed:', error)));
 
