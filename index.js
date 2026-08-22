@@ -1226,7 +1226,7 @@ function createPrefixInteraction(message, command, argumentText) {
   const sendPayload = async (payload) => {
     responsePrivate = isPrivatePayload(payload);
     const clean = cleanPayload(payload);
-    return responsePrivate ? sendPrefixPrivate(message, clean, true) : message.reply(clean);
+    return responsePrivate ? sendPrefixPrivate(message, clean, true) : message.channel.send(clean);
   };
   const requiredValue = (name, label) => {
     const value = values.get(name);
@@ -1267,18 +1267,18 @@ function createPrefixInteraction(message, command, argumentText) {
     deferReply: async (payload = {}) => {
       interaction.deferred = true;
       responsePrivate = isPrivatePayload(payload);
-      responseMessage = responsePrivate ? await sendPrefixPrivate(message, 'Working…', true) : await message.reply('Working…');
+      responseMessage = responsePrivate ? await sendPrefixPrivate(message, 'Working…', true) : await message.channel.send('Working…');
       return responseMessage;
     },
     editReply: async (payload) => {
       interaction.replied = true;
       if (responseMessage) return responseMessage.edit(cleanPayload(payload));
-      responseMessage = responsePrivate ? await sendPrefixPrivate(message, cleanPayload(payload), true) : await message.reply(cleanPayload(payload));
+      responseMessage = responsePrivate ? await sendPrefixPrivate(message, cleanPayload(payload), true) : await message.channel.send(cleanPayload(payload));
       return responseMessage;
     },
-    followUp: async (payload) => isPrivatePayload(payload) ? sendPrefixPrivate(message, cleanPayload(payload), true) : message.reply(cleanPayload(payload)),
+    followUp: async (payload) => isPrivatePayload(payload) ? sendPrefixPrivate(message, cleanPayload(payload), true) : message.channel.send(cleanPayload(payload)),
     deleteReply: async () => responseMessage?.delete(),
-    showModal: async () => message.reply('That option opens a Discord form and is only available through the slash-command version.'),
+    showModal: async () => sendPrefixPrivate(message, 'That option opens a Discord form and is only available through the slash-command version.', true),
   };
   return interaction;
 }
@@ -1301,35 +1301,41 @@ async function handlePrefixMessageCommand(message, prefix, name, argumentText) {
   if (requiredPermissions && !message.member?.permissions?.has(BigInt(requiredPermissions))) return sendPrefixPrivate(message, 'You do not have permission to use that command.', true);
   if (commandName === 'help' || commandName === 'commands') {
     const query = args.join(' ').trim();
-    return sendPrefixPrivate(message, { embeds: [query ? commandSearchEmbed(query, null, prefix) : new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Prefix Commands').setDescription(`Prefix: \`${prefix}\`\n\n\`${prefix}commands [search]\`\n\`${prefix}command-search [search]\`\n\`${prefix}serverinfo\`\n\`${prefix}member-count\`\n\`${prefix}panel-ids\`\n\`${prefix}prefix [new prefix]\``).setFooter({ text: 'Slash commands are still fully supported.' })] });
+    return sendPrefixPrivate(message, { embeds: [query ? commandSearchEmbed(query, null, prefix) : new EmbedBuilder().setColor(0x5865f2).setTitle('CU Bot Prefix Commands').setDescription(`Prefix: \`${prefix}\`\n\n\`${prefix}commands [search]\`\n\`${prefix}command-search [search]\`\n\`${prefix}serverinfo\`\n\`${prefix}member-count\`\n\`${prefix}panel-ids\`\n\`${prefix}prefix [new prefix]\``).setFooter({ text: 'Slash commands are still fully supported.' })] }, true);
   }
   if (commandName === 'command-search' || commandName === 'search') {
-    return sendPrefixPrivate(message, { embeds: [commandSearchEmbed(args.join(' ').trim(), null, prefix)] });
+    return sendPrefixPrivate(message, { embeds: [commandSearchEmbed(args.join(' ').trim(), null, prefix)] }, true);
   }
   if (commandName === 'prefix') {
     if (!message.member?.permissions?.has(PermissionFlagsBits.ManageGuild)) return sendPrefixPrivate(message, 'You need Manage Server to change the prefix.', true);
     const nextPrefix = args[0]?.trim();
-    if (!nextPrefix) return sendPrefixPrivate(message, `Current server prefix: \`${config.prefix || '!'}\``);
+    if (!nextPrefix) return sendPrefixPrivate(message, `Current server prefix: \`${config.prefix || '!'}\``, true);
     if (nextPrefix.length > 5 || /\s/.test(nextPrefix)) return message.reply('Prefix must be 1-5 characters and cannot contain spaces.');
     config.prefix = nextPrefix;
     await saveConfigurations();
-    return sendPrefixPrivate(message, `Server prefix changed to \`${nextPrefix}\`.`);
+    return sendPrefixPrivate(message, `Server prefix changed to \`${nextPrefix}\`.`, true);
   }
-  if (commandName === 'serverinfo') return message.reply({ embeds: [await serverInfoEmbed(message.guild)] });
+  if (commandName === 'serverinfo') {
+    if (message.deletable) await message.delete().catch(() => undefined);
+    return message.channel.send({ embeds: [await serverInfoEmbed(message.guild)] });
+  }
   if (commandName === 'member-count') {
     const stats = await serverMemberStats(message.guild);
-    return message.reply(`**${message.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`);
+    if (message.deletable) await message.delete().catch(() => undefined);
+    return message.channel.send(`**${message.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`);
   }
   if (commandName === 'panel-ids' || commandName === 'config-panel-ids') {
     const panels = Object.entries(config.libraries || {});
-    if (!panels.length) return sendPrefixPrivate(message, 'No saved config panels yet.');
+    if (!panels.length) return sendPrefixPrivate(message, 'No saved config panels yet.', true);
     const lines = panels.map(([panelId, item]) => `**${item.panel?.name || panelId.replace(/^named-/, '')}** — \`${panelId}\` (${(item.entries || []).length} entries)`);
-    return sendPrefixPrivate(message, { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('Saved Panel IDs').setDescription(lines.join('\n').slice(0, 3900)).setTimestamp()] });
+    return sendPrefixPrivate(message, { embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('Saved Panel IDs').setDescription(lines.join('\n').slice(0, 3900)).setTimestamp()] }, true);
   }
   const command = registeredCommand;
   if (!command) return sendPrefixPrivate(message, { embeds: [commandSearchEmbed(commandName || '', null, prefix).setTitle('Command not found')] }, true);
   try {
-    client.emit('interactionCreate', createPrefixInteraction(message, command, argumentText));
+    const prefixInteraction = createPrefixInteraction(message, command, argumentText);
+    if (message.deletable) await message.delete().catch(() => undefined);
+    client.emit('interactionCreate', prefixInteraction);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Could not parse that prefix command.';
     return sendPrefixPrivate(message, { embeds: [prefixUsageEmbed(command, prefix, errorMessage)] }, true);
