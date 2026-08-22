@@ -3638,14 +3638,21 @@ async function registerGuildCommands(guildId) {
     ...organizedModerationCommandNames,
     ...(commandGroups.economy || []),
   ]);
-  const prioritySlashCommands = new Set(['prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'panel-ids', 'config-panel-ids', 'config-panel', 'config-panel-edit', 'config-panel-remove', 'config-panel-deploy']);
+  const prioritySlashCommands = new Set([
+    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count',
+    'library', 'config-library', 'config-library-add', 'config-library-edit',
+    'config-library-remove', 'config-library-settings', 'library-db-copy', 'library-db-paste',
+  ]);
   const availableCommands = commands.filter((command) => !hiddenFromSlash.has(command.name));
+  const isPrioritySlashCommand = (command) => prioritySlashCommands.has(command.name)
+    || command.name.includes('panel')
+    || command.name.endsWith('-ids');
   const registeredCommands = [
-    ...availableCommands.filter((command) => prioritySlashCommands.has(command.name)),
-    ...availableCommands.filter((command) => !prioritySlashCommands.has(command.name)),
+    ...availableCommands.filter(isPrioritySlashCommand),
+    ...availableCommands.filter((command) => !isPrioritySlashCommand(command)),
   ].slice(0, 100);
   await rest.put(Routes.applicationGuildCommands(app.clientId, guildId), { body: registeredCommands.map((command) => command.toJSON ? command.toJSON() : command) });
-  console.log(`Registered commands for server ${guildId}.`);
+  console.log(`Registered ${registeredCommands.length} slash commands for server ${guildId}, including all panel and server-info commands.`);
 }
 
 client.once('clientReady', async (readyClient) => {
