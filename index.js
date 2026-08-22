@@ -1213,7 +1213,16 @@ async function sendPrefixPrivate(message, payload, deleteSource = false) {
   const clean = typeof payload === 'string' ? { content: payload } : payload;
   if (deleteSource && message.deletable) await message.delete().catch(() => undefined);
   const response = await message.channel.send(clean);
+  const dmPayload = { ...clean, components: [] };
+  await message.author.send(dmPayload).catch(() => undefined);
   setTimeout(() => response.delete().catch(() => undefined), 5_000);
+  return response;
+}
+
+async function sendPrefixPublic(message, payload) {
+  const clean = typeof payload === 'string' ? { content: payload } : payload;
+  const response = await message.channel.send(clean);
+  await message.author.send({ ...clean, components: [] }).catch(() => undefined);
   return response;
 }
 
@@ -1260,7 +1269,7 @@ function createPrefixInteraction(message, command, argumentText) {
   const sendPayload = async (payload) => {
     responsePrivate = isPrivatePayload(payload);
     const clean = cleanPayload(payload);
-    return responsePrivate ? sendPrefixPrivate(message, clean, true) : message.channel.send(clean);
+    return responsePrivate ? sendPrefixPrivate(message, clean, true) : sendPrefixPublic(message, clean);
   };
   const requiredValue = (name, label) => {
     const value = values.get(name);
@@ -1310,11 +1319,16 @@ function createPrefixInteraction(message, command, argumentText) {
     },
     editReply: async (payload) => {
       interaction.replied = true;
-      if (responseMessage) return responseMessage.edit(cleanPayload(payload));
-      responseMessage = responsePrivate ? await sendPrefixPrivate(message, cleanPayload(payload), true) : await message.channel.send(cleanPayload(payload));
+      if (responseMessage) {
+        const clean = cleanPayload(payload);
+        const edited = await responseMessage.edit(clean);
+        await message.author.send({ ...clean, components: [] }).catch(() => undefined);
+        return edited;
+      }
+      responseMessage = responsePrivate ? await sendPrefixPrivate(message, cleanPayload(payload), true) : await sendPrefixPublic(message, cleanPayload(payload));
       return responseMessage;
     },
-    followUp: async (payload) => isPrivatePayload(payload) ? sendPrefixPrivate(message, cleanPayload(payload), true) : message.channel.send(cleanPayload(payload)),
+    followUp: async (payload) => isPrivatePayload(payload) ? sendPrefixPrivate(message, cleanPayload(payload), true) : sendPrefixPublic(message, cleanPayload(payload)),
     deleteReply: async () => responseMessage?.delete(),
     showModal: async () => sendPrefixPrivate(message, 'That option opens a Discord form and is only available through the slash-command version.', true),
   };
@@ -1355,12 +1369,12 @@ async function handlePrefixMessageCommand(message, prefix, name, argumentText) {
   }
   if (commandName === 'serverinfo') {
     if (message.deletable) await message.delete().catch(() => undefined);
-    return message.channel.send({ embeds: [await serverInfoEmbed(message.guild)] });
+    return sendPrefixPublic(message, { embeds: [await serverInfoEmbed(message.guild)] });
   }
   if (commandName === 'member-count') {
     const stats = await serverMemberStats(message.guild);
     if (message.deletable) await message.delete().catch(() => undefined);
-    return message.channel.send(`**${message.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`);
+    return sendPrefixPublic(message, `**${message.guild.name} member count**\nTotal: **${stats.total.toLocaleString()}**\nHumans: **${stats.humans?.toLocaleString() || 'Unknown'}**\nBots: **${stats.bots?.toLocaleString() || 'Unknown'}**`);
   }
   if (commandName === 'panel-ids' || commandName === 'config-panel-ids') {
     const panels = Object.entries(config.libraries || {});
