@@ -1185,13 +1185,9 @@ function prefixValueForOption(message, option, rawValue, attachmentIndex) {
 async function sendPrefixPrivate(message, payload, deleteSource = false) {
   const clean = typeof payload === 'string' ? { content: payload } : payload;
   if (deleteSource && message.deletable) await message.delete().catch(() => undefined);
-  return message.author.send(clean).catch(async () => {
-    const fallback = await message.channel.send({
-      content: `<@${message.author.id}> I could not DM you. Enable direct messages to receive private command results.`,
-    });
-    setTimeout(() => fallback.delete().catch(() => undefined), 10_000);
-    return fallback;
-  });
+  const response = await message.channel.send(clean);
+  setTimeout(() => response.delete().catch(() => undefined), 5_000);
+  return response;
 }
 
 function prefixUsageEmbed(command, prefix, errorMessage) {
@@ -1278,7 +1274,10 @@ function createPrefixInteraction(message, command, argumentText) {
     deferReply: async (payload = {}) => {
       interaction.deferred = true;
       responsePrivate = isPrivatePayload(payload);
-      responseMessage = responsePrivate ? await sendPrefixPrivate(message, 'Working…', true) : await message.channel.send('Working…');
+      if (responsePrivate) {
+        if (message.deletable) await message.delete().catch(() => undefined);
+        responseMessage = null;
+      } else responseMessage = await message.channel.send('Working…');
       return responseMessage;
     },
     editReply: async (payload) => {
