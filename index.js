@@ -413,6 +413,7 @@ const commands = [
   new SlashCommandBuilder().setName('anti-nuke').setDescription('Configure light anti-nuke burst alerts.').setDefaultMemberPermissions(PermissionFlagsBits.Administrator).addBooleanOption((o) => o.setName('enabled').setDescription('Turn anti-nuke monitoring on or off')).addChannelOption((o) => textChannelOption(o.setName('log-channel').setDescription('Where alerts should be sent'))).addStringOption((o) => o.setName('action').setDescription('What to do when a burst is detected').addChoices({ name: 'Alert only', value: 'alert' }, { name: 'Alert + timeout', value: 'timeout' })).addIntegerOption((o) => o.setName('threshold').setDescription('Actions before alerting, default 5').setMinValue(3).setMaxValue(20)).addIntegerOption((o) => o.setName('window-seconds').setDescription('Time window, default 60 seconds').setMinValue(30).setMaxValue(300)).addIntegerOption((o) => o.setName('timeout-minutes').setDescription('Timeout length for timeout mode').setMinValue(1).setMaxValue(60)).addUserOption((o) => o.setName('ignore-user').setDescription('Trusted user to ignore')).addBooleanOption((o) => o.setName('remove-ignore').setDescription('Remove ignore-user from trusted ignore list')),
   new SlashCommandBuilder().setName('uwu-lock').setDescription('Admin: toggle uwu webhook mode for a member.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addUserOption((o) => o.setName('user').setDescription('Member to uwu-lock').setRequired(true)).addBooleanOption((o) => o.setName('enabled').setDescription('Set on/off; leave blank to toggle')),
   new SlashCommandBuilder().setName('unuwulock').setDescription('Admin: remove uwu lock from a member.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild).addUserOption((o) => o.setName('user').setDescription('Member to unlock').setRequired(true)),
+  new SlashCommandBuilder().setName('disable-uwu-lock').setDescription('Admin: disable all active uwu locks in this server.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('serverinfo').setDescription('Show detailed server info, images, boosts, emojis, and member counts.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('member-count').setDescription('Show server member, human, and bot counts.').setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('request').setDescription('Request bot/user/server approval from the bot owners.').addStringOption((o) => o.setName('type').setDescription('Approval type').setRequired(true).addChoices({ name: 'Server', value: 'server' }, { name: 'User', value: 'user' })).addStringOption((o) => o.setName('target-id').setDescription('Server ID or user ID').setRequired(true)).addStringOption((o) => o.setName('reason').setDescription('Why approval is needed').setMaxLength(500)),
@@ -1099,6 +1100,15 @@ async function handleUwuLockCommand(interaction, forcedEnabled = null) {
   else delete config.uwuLockedUsers[user.id];
   await saveConfigurations();
   return replyPrivately(interaction, `${user} is now **${enabled ? 'uwu-locked' : 'unlocked'}**.`, 'success');
+}
+
+async function handleDisableUwuLockCommand(interaction) {
+  requireAdminServer(interaction);
+  const config = ensureConfiguration(interaction.guildId);
+  const disabledCount = Object.keys(config.uwuLockedUsers || {}).length;
+  config.uwuLockedUsers = {};
+  await saveConfigurations();
+  return replyPrivately(interaction, `Disabled uwu lock for **${disabledCount}** member${disabledCount === 1 ? '' : 's'} in this server.`, 'success');
 }
 
 async function uwuWebhookFor(channel) {
@@ -3732,7 +3742,7 @@ async function registerGuildCommands(guildId) {
     ...(commandGroups.economy || []),
   ]);
   const prioritySlashCommands = new Set([
-    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'mute', 'unmute', 'timeout', 'untimeout', 'uwu-lock', 'unuwulock',
+    'help', 'prefix', 'commands', 'command-search', 'serverinfo', 'member-count', 'mute', 'unmute', 'timeout', 'untimeout', 'uwu-lock', 'unuwulock', 'disable-uwu-lock',
     'library', 'config-library', 'config-library-add', 'config-library-edit',
     'config-library-remove', 'config-library-settings', 'library-db-copy', 'library-db-paste',
   ]);
@@ -3833,6 +3843,7 @@ client.on('interactionCreate', async (interaction) => {
       else if (interaction.commandName === 'anti-nuke') await handleAntiNukeCommand(interaction);
       else if (interaction.commandName === 'uwu-lock') await handleUwuLockCommand(interaction);
       else if (interaction.commandName === 'unuwulock') await handleUwuLockCommand(interaction, false);
+      else if (interaction.commandName === 'disable-uwu-lock') await handleDisableUwuLockCommand(interaction);
       else if (interaction.commandName === 'serverinfo' || interaction.commandName === 'member-count') await handleModerationCommand(interaction);
       else if (interaction.commandName === 'command-search') await handleCommandSearch(interaction);
       else if (interaction.commandName === 'commands') await handleCommandsHelp(interaction);
